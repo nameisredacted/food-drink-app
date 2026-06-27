@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Food + Drink List</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/msal/2.38.3/msal-browser.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1115; --card:#1a1d24; --card2:#22262f; --text:#eceef1; --muted:#9aa3af;
+    --accent:#e0a458; --good:#5fb878; --bad:#e0625f; --maybe:#9aa3af; --border:#2a2e37;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);}
+  header{position:sticky;top:0;background:var(--bg);padding:12px 14px 8px;z-index:10;border-bottom:1px solid var(--border);}
+  h1{font-size:18px;margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .search{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;}
+  .row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;}
+  select, .chip{font-size:13px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);}
+  .chip{cursor:pointer;user-select:none;}
+  .chip.active{background:var(--accent);color:#1a1208;border-color:var(--accent);}
+  .count{font-size:12px;color:var(--muted);margin-top:6px;}
+  main{padding:10px 14px 90px;}
+  .item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;}
+  .item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .item-name{font-size:15px;font-weight:600;}
+  .badge{font-size:12px;border-radius:6px;padding:2px 7px;flex-shrink:0;font-weight:600;}
+  .badge.y{background:rgba(95,184,120,.18);color:var(--good);}
+  .badge.n{background:rgba(224,98,95,.18);color:var(--bad);}
+  .badge.dash{background:rgba(154,163,175,.18);color:var(--maybe);}
+  .item-sub{font-size:13px;color:var(--muted);margin-top:3px;}
+  .toorder{display:inline-block;margin-top:6px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:1px 6px;}
+  .more{display:block;width:100%;padding:12px;text-align:center;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+  .fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a1208;font-size:28px;display:flex;align-items:center;justify-content:center;border:none;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:20;}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:none;}
+  .overlay.open{display:block;}
+  .sheet{position:fixed;left:0;right:0;bottom:0;max-height:88vh;overflow-y:auto;background:var(--card);border-radius:16px 16px 0 0;padding:18px;z-index:31;transform:translateY(100%);transition:transform .2s ease;}
+  .sheet.open{transform:translateY(0);}
+  .sheet h2{margin:0 0 4px;font-size:18px;}
+  .sheet .sub{color:var(--muted);font-size:13px;margin-bottom:10px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;}
+  .field input, .field select, .field textarea{width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;font-family:inherit;}
+  .field textarea{min-height:60px;resize:vertical;}
+  .menu-group{margin-top:10px;}
+  .menu-group h4{margin:0 0 2px;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.03em;}
+  .menu-group p{margin:0;font-size:14px;}
+  .btnrow{display:flex;gap:8px;margin-top:14px;}
+  .btn{flex:1;padding:11px;border-radius:9px;border:none;font-size:14px;font-weight:600;cursor:pointer;}
+  .btn.primary{background:var(--accent);color:#1a1208;}
+  .btn.ghost{background:var(--card2);color:var(--text);border:1px solid var(--border);}
+  .btn.danger{background:rgba(224,98,95,.18);color:var(--bad);border:1px solid var(--bad);}
+  .close-x{position:absolute;top:14px;right:14px;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
+  ::placeholder{color:var(--muted);}
+  .gate{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;}
+  .gate h2{margin-bottom:8px;}
+  .gate p{color:var(--muted);font-size:14px;max-width:320px;margin-bottom:20px;}
+  .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .errbox{background:rgba(224,98,95,.12);border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px;font-size:13px;margin-top:12px;max-width:340px;word-break:break-word;}
+  .refresh{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;margin-left:auto;}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div id="gateInner">
+    <h2>Food + Drink</h2>
+    <p>Sign in with the Microsoft account connected to your OneDrive to load your live list.</p>
+    <button class="btn primary" id="signInBtn" style="flex:none;padding:12px 24px;">Sign in with Microsoft</button>
+  </div>
+</div>
+
+<header style="display:none;" id="appHeader">
+  <h1>Food + Drink (<span id="totalCount">0</span>) <button class="refresh" id="refreshBtn">refresh</button></h1>
+  <input class="search" id="searchBox" placeholder="Search name, category, location, notes...">
+  <div class="row">
+    <select id="categorySelect"><option value="">All categories</option></select>
+    <div class="chip" data-rating="y">👍 y</div>
+    <div class="chip" data-rating="-">🤔 -</div>
+    <div class="chip" data-rating="n">👎 n</div>
+    <div class="chip" id="toOrderChip">⭐ To Order</div>
+  </div>
+  <div class="count" id="resultCount"></div>
+</header>
+
+<main id="list"></main>
+
+<button class="fab" id="addBtn" style="display:none;">+</button>
+
+<div class="overlay" id="overlay"></div>
+<div class="sheet" id="detailSheet">
+  <button class="close-x" id="closeDetail">&times;</button>
+  <div id="detailContent"></div>
+</div>
+
+<div class="sheet" id="formSheet">
+  <button class="close-x" id="closeForm">&times;</button>
+  <h2 id="formTitle">Add Spot</h2>
+  <div class="sub">Writes directly to your Excel file in OneDrive.</div>
+  <div class="field"><label>Name</label><input id="f_name"></div>
+  <div class="field"><label>Category</label><input id="f_category"></div>
+  <div class="field"><label>Location</label><input id="f_location"></div>
+  <div class="field"><label>Address</label><input id="f_address"></div>
+  <div class="field"><label>Rating</label>
+    <select id="f_rating"><option value="-">- (unsure)</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
+  </div>
+  <div class="field"><label>To Order</label><input id="f_toOrder" placeholder="e.g. tacos al pastor"></div>
+  <div class="field"><label>Notes</label><textarea id="f_notes"></textarea></div>
+  <div class="btnrow">
+    <button class="btn ghost" id="cancelForm">Cancel</button>
+    <button class="btn primary" id="saveForm">Save</button>
+  </div>
+</div>
+
+<script>
+/* ====== CONFIG ====== */
+const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
+const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
+const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
+// Path to the file inside the user's OneDrive, relative to drive root.
+const FILE_PATH = "the list/Food + Drink/Claude/Food Repository.xlsx";
+const MAIN_SHEET = "Food + Drink";
+const MAIN_TABLE = "FoodDrinkTable";
+const MENU_SHEET = "Menu Details";
+/* ===================== */
+
+const msalConfig = {
+  auth: {
+    clientId: MSAL_CLIENT_ID,
+    authority: "https://login.microsoftonline.com/common",
+    redirectUri: REDIRECT_URI,
+  },
+  cache: { cacheLocation: "localStorage" }
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+function encPath(p){
+  return p.split('/').map(encodeURIComponent).join('/');
+}
+function graphFileBase(){
+  return `https://graph.microsoft.com/v1.0/me/drive/root:/${encPath(FILE_PATH)}:/workbook`;
+}
+
+let account = null;
+
+async function getToken(){
+  const accounts = msalInstance.getAllAccounts();
+  if(!accounts.length) throw new Error("not signed in");
+  account = accounts[0];
+  try{
+    const res = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+    return res.accessToken;
+  }catch(e){
+    await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES });
+    throw e;
+  }
+}
+
+async function graph(method, path, body){
+  const token = await getToken();
+  const res = await fetch(graphFileBase() + path, {
+    method,
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    const text = await res.text();
+    throw new Error(`Graph ${method} ${path} failed: ${res.status} ${text}`);
+  }
+  if(res.status === 204) return null;
+  return res.json();
+}
+
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address'];
+
+function rowToObj(rowValues, index){
+  const o = { index };
+  COLS.forEach((c,i) => o[c] = rowValues[i] !== undefined && rowValues[i] !== null ? String(rowValues[i]) : '');
+  return o;
+}
+function objToRow(o){
+  return COLS.map(c => o[c] !== undefined ? o[c] : '');
+}
+
+let venues = [];
+let menus = {};
+
+async function loadAll(){
+  // load table rows (paged)
+  let rows = [];
+  let next = `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`;
+  while(next){
+    const data = await graph('GET', next.startsWith('http') ? next.replace(graphFileBase(),'') : next);
+    rows = rows.concat(data.value);
+    next = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
+  }
+  venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
+
+  // load menu details (read-only usedRange)
+  try{
+    const menuData = await graph('GET', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/usedRange(valuesOnly=true)`);
+    const vals = menuData.values;
+    const headers = vals[0].slice(1);
+    menus = {};
+    for(const row of vals.slice(1)){
+      const venueName = row[0];
+      if(!venueName) continue;
+      const items = {};
+      headers.forEach((h,i) => {
+        const v = row[i+1];
+        if(v !== null && v !== undefined && String(v).trim() !== '') items[h] = v;
+      });
+      menus[venueName] = items;
+    }
+  }catch(e){
+    console.warn('menu load failed', e);
+    menus = {};
+  }
+}
+
+/* ====== UI ====== */
+let state = { query:'', category:'', ratings:new Set(), toOrderOnly:false, shown:60 };
+
+function matches(v){
+  if(state.category && v.category !== state.category) return false;
+  if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
+  if(state.toOrderOnly && !(v.toOrder && String(v.toOrder).trim())) return false;
+  if(state.query){
+    const q = state.query.toLowerCase();
+    const hay = [v.name, v.category, v.location, v.notes, v.address, v.toOrder].filter(Boolean).join(' ').toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
+}
+function ratingBadgeClass(r){
+  r = (r||'').trim();
+  if(r==='y') return 'y';
+  if(r==='n') return 'n';
+  return 'dash';
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function populateCategories(){
+  const sel = document.getElementById('categorySelect');
+  sel.innerHTML = '<option value="">All categories</option>';
+  const cats = Array.from(new Set(venues.map(v=>v.category).filter(Boolean))).sort();
+  cats.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
+}
+
+function render(){
+  document.getElementById('totalCount').textContent = venues.length;
+  const filtered = venues.filter(matches);
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  const toShow = filtered.slice(0, state.shown);
+  document.getElementById('resultCount').textContent = filtered.length + ' result' + (filtered.length===1?'':'s');
+  toShow.forEach(v => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.innerHTML = `
+      <div class="item-top">
+        <div class="item-name">${escapeHtml(v.name||'')}</div>
+        <div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml((v.rating||'-').trim()||'-')}</div>
+      </div>
+      <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
+      ${v.toOrder ? `<div class="toorder">${escapeHtml(String(v.toOrder))}</div>` : ''}
+    `;
+    el.addEventListener('click', () => openDetail(v));
+    list.appendChild(el);
+  });
+  if(filtered.length > toShow.length){
+    const btn = document.createElement('button');
+    btn.className = 'more';
+    btn.textContent = `Show more (${filtered.length - toShow.length} left)`;
+    btn.addEventListener('click', () => { state.shown += 100; render(); });
+    list.appendChild(btn);
+  }
+}
+
+document.getElementById('searchBox').addEventListener('input', e => { state.query = e.target.value; state.shown=60; render(); });
+document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; render(); });
+document.querySelectorAll('.chip[data-rating]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const r = chip.dataset.rating;
+    if(state.ratings.has(r)){ state.ratings.delete(r); chip.classList.remove('active'); }
+    else { state.ratings.add(r); chip.classList.add('active'); }
+    state.shown = 60;
+    render();
+  });
+});
+document.getElementById('toOrderChip').addEventListener('click', () => {
+  state.toOrderOnly = !state.toOrderOnly;
+  document.getElementById('toOrderChip').classList.toggle('active', state.toOrderOnly);
+  state.shown = 60;
+  render();
+});
+
+const overlay = document.getElementById('overlay');
+const detailSheet = document.getElementById('detailSheet');
+const formSheet = document.getElementById('formSheet');
+
+function openDetail(v){
+  const menu = menus[v.name];
+  let menuHtml = '';
+  if(menu && Object.keys(menu).length){
+    menuHtml = '<div class="field"><label>Menu Items</label>' +
+      Object.entries(menu).map(([k,val]) => `<div class="menu-group"><h4>${escapeHtml(k)}</h4><p>${escapeHtml(val)}</p></div>`).join('') +
+      '</div>';
+  }
+  document.getElementById('detailContent').innerHTML = `
+    <h2>${escapeHtml(v.name||'')}</h2>
+    <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
+    <div class="field"><label>Rating</label><div class="badge ${ratingBadgeClass(v.rating)}" style="display:inline-block;">${escapeHtml((v.rating||'-').trim()||'-')}</div></div>
+    ${v.toOrder ? `<div class="field"><label>To Order</label><div>${escapeHtml(String(v.toOrder))}</div></div>` : ''}
+    ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
+    ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
+    ${menuHtml}
+    <div class="btnrow">
+      <button class="btn ghost" id="editBtn">Edit</button>
+      <button class="btn danger" id="deleteBtn">Delete</button>
+    </div>
+  `;
+  document.getElementById('editBtn').addEventListener('click', () => { closeDetail(); openForm(v); });
+  document.getElementById('deleteBtn').addEventListener('click', async () => {
+    if(!confirm(`Delete "${v.name}" from your Excel file?`)) return;
+    closeDetail();
+    await withBusy(async () => {
+      await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})/delete`);
+      await loadAll();
+      populateCategories();
+      render();
+    });
+  });
+  overlay.classList.add('open');
+  detailSheet.classList.add('open');
+}
+function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); }
+document.getElementById('closeDetail').addEventListener('click', closeDetail);
+overlay.addEventListener('click', () => { closeDetail(); closeForm(); });
+
+let editingVenue = null;
+function openForm(v){
+  editingVenue = v || null;
+  document.getElementById('formTitle').textContent = v ? 'Edit Spot' : 'Add Spot';
+  document.getElementById('f_name').value = v ? (v.name||'') : '';
+  document.getElementById('f_category').value = v ? (v.category||'') : '';
+  document.getElementById('f_location').value = v ? (v.location||'') : '';
+  document.getElementById('f_address').value = v ? (v.address||'') : '';
+  document.getElementById('f_rating').value = v ? ((v.rating||'-').trim()||'-') : '-';
+  document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
+  document.getElementById('f_notes').value = v ? (v.notes||'') : '';
+  overlay.classList.add('open');
+  formSheet.classList.add('open');
+}
+function closeForm(){ overlay.classList.remove('open'); formSheet.classList.remove('open'); editingVenue=null; }
+document.getElementById('addBtn').addEventListener('click', () => openForm(null));
+document.getElementById('closeForm').addEventListener('click', closeForm);
+document.getElementById('cancelForm').addEventListener('click', closeForm);
+document.getElementById('refreshBtn').addEventListener('click', () => withBusy(async () => { await loadAll(); populateCategories(); render(); }));
+
+document.getElementById('saveForm').addEventListener('click', async () => {
+  const rec = {
+    name: document.getElementById('f_name').value.trim(),
+    category: document.getElementById('f_category').value.trim(),
+    location: document.getElementById('f_location').value.trim(),
+    address: document.getElementById('f_address').value.trim(),
+    rating: document.getElementById('f_rating').value,
+    toOrder: document.getElementById('f_toOrder').value.trim(),
+    notes: document.getElementById('f_notes').value.trim(),
+    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : ''
+  };
+  if(!rec.name){ alert('Name is required'); return; }
+  closeForm();
+  await withBusy(async () => {
+    if(editingVenue){
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${editingVenue.index})`, { values: [objToRow(rec)] });
+    } else {
+      await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
+    }
+    await loadAll();
+    populateCategories();
+    render();
+  });
+});
+
+async function withBusy(fn){
+  const fab = document.getElementById('addBtn');
+  fab.disabled = true;
+  try{
+    await fn();
+  }catch(e){
+    console.error(e);
+    alert('Something went wrong talking to OneDrive: ' + e.message);
+  }finally{
+    fab.disabled = false;
+  }
+}
+
+/* ====== AUTH GATE ====== */
+async function init(){
+  try{
+    const result = await msalInstance.handleRedirectPromise();
+    if(result) account = result.account;
+  }catch(e){
+    showGateError('Sign-in failed: ' + e.message);
+    return;
+  }
+
+  const accounts = msalInstance.getAllAccounts();
+  if(!accounts.length){
+    showSignInButton();
+    return;
+  }
+  account = accounts[0];
+  showLoading();
+  try{
+    await loadAll();
+    populateCategories();
+    render();
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('appHeader').style.display = '';
+    document.getElementById('addBtn').style.display = '';
+  }catch(e){
+    console.error(e);
+    showGateError('Could not load your file: ' + e.message);
+  }
+}
+
+function showSignInButton(){
+  document.getElementById('gateInner').innerHTML = `
+    <h2>Food + Drink</h2>
+    <p>Sign in with the Microsoft account connected to your OneDrive to load your live list.</p>
+    <button class="btn primary" id="signInBtn" style="flex:none;padding:12px 24px;">Sign in with Microsoft</button>
+  `;
+  document.getElementById('signInBtn').addEventListener('click', () => {
+    msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+  });
+}
+function showLoading(){
+  document.getElementById('gateInner').innerHTML = `
+    <div class="spinner"></div>
+    <p>Loading your list from OneDrive...</p>
+  `;
+}
+function showGateError(msg){
+  document.getElementById('gateInner').innerHTML = `
+    <h2>Food + Drink</h2>
+    <p>Something went wrong.</p>
+    <div class="errbox">${escapeHtml(msg)}</div>
+    <button class="btn primary" id="retryBtn" style="flex:none;padding:12px 24px;margin-top:14px;">Try again</button>
+  `;
+  document.getElementById('retryBtn').addEventListener('click', () => location.reload());
+}
+
+init();
+</script>
+</body>
+</html>
