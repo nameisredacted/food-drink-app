@@ -405,6 +405,7 @@ async function withBusy(fn){
 /* ====== AUTH GATE ====== */
 async function init(){
   try{
+    await msalInstance.initialize();
     const result = await msalInstance.handleRedirectPromise();
     if(result) account = result.account;
   }catch(e){
