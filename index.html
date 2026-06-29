@@ -59,6 +59,11 @@
   @keyframes spin{to{transform:rotate(360deg);}}
   .errbox{background:rgba(224,98,95,.12);border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px;font-size:13px;margin-top:12px;max-width:340px;word-break:break-word;}
   .refresh{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;margin-left:auto;}
+  .menurow{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .menurow input.mkey{flex:0 0 38%;}
+  .menurow input.mval{flex:1;}
+  .menurow button.rm{flex:none;background:none;border:none;color:var(--bad);font-size:18px;cursor:pointer;padding:4px 6px;}
+  .addRowBtn{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;margin-top:4px;}
 </style>
 </head>
 <body>
@@ -114,6 +119,18 @@
   </div>
 </div>
 
+<div class="sheet" id="menuFormSheet">
+  <button class="close-x" id="closeMenuForm">&times;</button>
+  <h2 id="menuFormTitle">Edit Menu</h2>
+  <div class="sub">Writes directly to the Menu Details sheet in your Excel file.</div>
+  <div id="menuRows"></div>
+  <button class="addRowBtn" id="addMenuRowBtn" type="button">+ Add category</button>
+  <div class="btnrow">
+    <button class="btn ghost" id="cancelMenuForm">Cancel</button>
+    <button class="btn primary" id="saveMenuForm">Save</button>
+  </div>
+</div>
+
 <script>
 /* ====== CONFIG ====== */
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
@@ -124,6 +141,7 @@ const FILE_PATH = "the list/Food + Drink/Claude/Food Repository.xlsx";
 const MAIN_SHEET = "Food + Drink";
 const MAIN_TABLE = "FoodDrinkTable";
 const MENU_SHEET = "Menu Details";
+const MENU_TABLE = "MenuDetailsTable";
 /* ===================== */
 
 const msalConfig = {
@@ -188,7 +206,8 @@ function objToRow(o){
 }
 
 let venues = [];
-let menus = {};
+let menus = {};       // name -> { index, values: { header: val } }
+let menuHeaders = []; // ordered list of category column headers (excludes "Venue")
 
 async function loadAll(){
   // load table rows (paged)
@@ -201,25 +220,36 @@ async function loadAll(){
   }
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
 
-  // load menu details (read-only usedRange)
+  // load menu details via its table (gives row indexes so we can edit/add)
   try{
-    const menuData = await graph('GET', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/usedRange(valuesOnly=true)`);
-    const vals = menuData.values;
-    const headers = vals[0].slice(1);
-    menus = {};
-    for(const row of vals.slice(1)){
-      const venueName = row[0];
-      if(!venueName) continue;
-      const items = {};
-      headers.forEach((h,i) => {
-        const v = row[i+1];
-        if(v !== null && v !== undefined && String(v).trim() !== '') items[h] = v;
-      });
-      menus[venueName] = items;
+    const headerData = await graph('GET', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/range(address='A1:BA1')`);
+    const headerRow = headerData.values[0];
+    menuHeaders = headerRow.slice(1).filter(h => h !== null && h !== undefined && String(h).trim() !== '');
+
+    let mrows = [];
+    let mnext = `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`;
+    while(mnext){
+      const data = await graph('GET', mnext.startsWith('http') ? mnext.replace(graphFileBase(),'') : mnext);
+      mrows = mrows.concat(data.value);
+      mnext = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
     }
+    menus = {};
+    mrows.forEach((r, i) => {
+      const rowVals = r.values[0];
+      const venueName = rowVals[0];
+      if(!venueName) return;
+      const values = {};
+      headerRow.slice(1).forEach((h, idx) => {
+        if(h === null || h === undefined || String(h).trim() === '') return;
+        const v = rowVals[idx+1];
+        if(v !== null && v !== undefined && String(v).trim() !== '') values[h] = v;
+      });
+      menus[venueName] = { index: r.index !== undefined ? r.index : i, values };
+    });
   }catch(e){
     console.warn('menu load failed', e);
     menus = {};
+    menuHeaders = [];
     window.__menuLoadError = e.message;
   }
 }
@@ -306,13 +336,14 @@ document.getElementById('toOrderChip').addEventListener('click', () => {
 const overlay = document.getElementById('overlay');
 const detailSheet = document.getElementById('detailSheet');
 const formSheet = document.getElementById('formSheet');
+const menuFormSheet = document.getElementById('menuFormSheet');
 
 function openDetail(v){
   const menu = menus[v.name];
   let menuHtml = '';
-  if(menu && Object.keys(menu).length){
+  if(menu && Object.keys(menu.values).length){
     menuHtml = '<div class="field"><label>Menu Items</label>' +
-      Object.entries(menu).map(([k,val]) => `<div class="menu-group"><h4>${escapeHtml(k)}</h4><p>${escapeHtml(val)}</p></div>`).join('') +
+      Object.entries(menu.values).map(([k,val]) => `<div class="menu-group"><h4>${escapeHtml(k)}</h4><p>${escapeHtml(val)}</p></div>`).join('') +
       '</div>';
   }
   document.getElementById('detailContent').innerHTML = `
@@ -325,10 +356,12 @@ function openDetail(v){
     ${menuHtml}
     <div class="btnrow">
       <button class="btn ghost" id="editBtn">Edit</button>
+      <button class="btn ghost" id="editMenuBtn">${menu ? 'Edit Menu' : 'Add Menu'}</button>
       <button class="btn danger" id="deleteBtn">Delete</button>
     </div>
   `;
   document.getElementById('editBtn').addEventListener('click', () => { closeDetail(); openForm(v); });
+  document.getElementById('editMenuBtn').addEventListener('click', () => { closeDetail(); openMenuForm(v); });
   document.getElementById('deleteBtn').addEventListener('click', async () => {
     if(!confirm(`Delete "${v.name}" from your Excel file?`)) return;
     closeDetail();
@@ -344,7 +377,7 @@ function openDetail(v){
 }
 function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); }
 document.getElementById('closeDetail').addEventListener('click', closeDetail);
-overlay.addEventListener('click', () => { closeDetail(); closeForm(); });
+overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); });
 
 let editingVenue = null;
 function openForm(v){
@@ -384,6 +417,82 @@ document.getElementById('saveForm').addEventListener('click', async () => {
       await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${editingVenue.index})`, { values: [objToRow(rec)] });
     } else {
       await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
+    }
+    await loadAll();
+    populateCategories();
+    render();
+  });
+});
+
+/* ====== Menu edit form ====== */
+let menuEditingVenue = null;
+
+function addMenuRow(key, val){
+  const wrap = document.getElementById('menuRows');
+  const row = document.createElement('div');
+  row.className = 'menurow';
+  row.innerHTML = `
+    <input class="mkey" placeholder="Category (e.g. Appetizers)" value="${escapeHtml(key||'')}">
+    <input class="mval" placeholder="Item(s)" value="${escapeHtml(val||'')}">
+    <button class="rm" type="button">&times;</button>
+  `;
+  row.querySelector('.rm').addEventListener('click', () => row.remove());
+  wrap.appendChild(row);
+}
+
+function openMenuForm(v){
+  menuEditingVenue = v;
+  document.getElementById('menuFormTitle').textContent = (menus[v.name] ? 'Edit Menu — ' : 'Add Menu — ') + v.name;
+  const wrap = document.getElementById('menuRows');
+  wrap.innerHTML = '';
+  const existing = menus[v.name] ? menus[v.name].values : {};
+  const keys = Object.keys(existing);
+  if(keys.length){
+    keys.forEach(k => addMenuRow(k, existing[k]));
+  } else {
+    addMenuRow('', '');
+  }
+  overlay.classList.add('open');
+  menuFormSheet.classList.add('open');
+}
+function closeMenuForm(){ overlay.classList.remove('open'); menuFormSheet.classList.remove('open'); menuEditingVenue=null; }
+document.getElementById('addMenuRowBtn').addEventListener('click', () => addMenuRow('', ''));
+document.getElementById('closeMenuForm').addEventListener('click', closeMenuForm);
+document.getElementById('cancelMenuForm').addEventListener('click', closeMenuForm);
+
+document.getElementById('saveMenuForm').addEventListener('click', async () => {
+  const v = menuEditingVenue;
+  if(!v) return;
+  const rows = Array.from(document.querySelectorAll('#menuRows .menurow'));
+  const pairs = rows.map(r => ({
+    key: r.querySelector('.mkey').value.trim(),
+    val: r.querySelector('.mval').value.trim()
+  })).filter(p => p.key);
+
+  // make sure every header used here exists in our known header list;
+  // unknown headers can't be written because that would require adding a
+  // new column to the Excel table, which this app doesn't do.
+  const unknown = pairs.filter(p => !menuHeaders.includes(p.key));
+  if(unknown.length){
+    alert('These categories don\'t exist as columns yet in the Menu Details sheet, so they can\'t be saved from here: ' +
+      unknown.map(p=>p.key).join(', ') + '\n\nAdd the column in Excel first, then it will show up here.');
+    return;
+  }
+
+  const rowValues = new Array(menuHeaders.length + 1).fill('');
+  rowValues[0] = v.name;
+  pairs.forEach(p => {
+    const idx = menuHeaders.indexOf(p.key);
+    if(idx > -1) rowValues[idx+1] = p.val;
+  });
+
+  closeMenuForm();
+  await withBusy(async () => {
+    const existingEntry = menus[v.name];
+    if(existingEntry){
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${existingEntry.index})`, { values: [rowValues] });
+    } else {
+      await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`, { values: [rowValues] });
     }
     await loadAll();
     populateCategories();
