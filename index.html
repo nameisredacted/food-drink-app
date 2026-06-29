@@ -42,6 +42,8 @@
   .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;}
   .field input, .field select, .field textarea{width:100%;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;font-family:inherit;}
   .field textarea{min-height:60px;resize:vertical;}
+  .field .locked{padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:#16181d;color:var(--muted);font-size:14px;min-height:18px;}
+  .field .hint{font-size:11px;color:var(--muted);margin-top:4px;}
   .menu-group{margin-top:10px;}
   .menu-group h4{margin:0 0 2px;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.03em;}
   .menu-group p{margin:0;font-size:14px;}
@@ -112,6 +114,12 @@
     <select id="f_rating"><option value="-">- (unsure)</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
   </div>
   <div class="field"><label>To Order</label><input id="f_toOrder" placeholder="e.g. tacos al pastor"></div>
+  <div class="field">
+    <label>Ordered</label>
+    <div class="locked" id="f_ordered_existing">(nothing yet)</div>
+    <div class="hint">Existing entries can't be removed here — only added to.</div>
+    <input id="f_ordered_add" placeholder="Add an item you've actually ordered" style="margin-top:6px;">
+  </div>
   <div class="field"><label>Notes</label><textarea id="f_notes"></textarea></div>
   <div class="btnrow">
     <button class="btn ghost" id="cancelForm">Cancel</button>
@@ -194,7 +202,7 @@ async function graph(method, path, body){
   return res.json();
 }
 
-const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address'];
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','ordered'];
 
 function rowToObj(rowValues, index){
   const o = { index };
@@ -351,6 +359,7 @@ function openDetail(v){
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
     <div class="field"><label>Rating</label><div class="badge ${ratingBadgeClass(v.rating)}" style="display:inline-block;">${escapeHtml((v.rating||'-').trim()||'-')}</div></div>
     ${v.toOrder ? `<div class="field"><label>To Order</label><div>${escapeHtml(String(v.toOrder))}</div></div>` : ''}
+    ${v.ordered ? `<div class="field"><label>Ordered</label><div>${escapeHtml(String(v.ordered))}</div></div>` : ''}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
     ${menuHtml}
@@ -389,6 +398,8 @@ function openForm(v){
   document.getElementById('f_address').value = v ? (v.address||'') : '';
   document.getElementById('f_rating').value = v ? ((v.rating||'-').trim()||'-') : '-';
   document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
+  document.getElementById('f_ordered_existing').textContent = (v && v.ordered && v.ordered.trim()) ? v.ordered : '(nothing yet)';
+  document.getElementById('f_ordered_add').value = '';
   document.getElementById('f_notes').value = v ? (v.notes||'') : '';
   overlay.classList.add('open');
   formSheet.classList.add('open');
@@ -400,6 +411,12 @@ document.getElementById('cancelForm').addEventListener('click', closeForm);
 document.getElementById('refreshBtn').addEventListener('click', () => withBusy(async () => { await loadAll(); populateCategories(); render(); }));
 
 document.getElementById('saveForm').addEventListener('click', async () => {
+  const existingOrdered = (editingVenue && editingVenue.ordered) ? editingVenue.ordered.trim() : '';
+  const addition = document.getElementById('f_ordered_add').value.trim();
+  const combinedOrdered = existingOrdered && addition
+    ? existingOrdered + ', ' + addition
+    : (existingOrdered || addition);
+
   const rec = {
     name: document.getElementById('f_name').value.trim(),
     category: document.getElementById('f_category').value.trim(),
@@ -408,7 +425,8 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     rating: document.getElementById('f_rating').value,
     toOrder: document.getElementById('f_toOrder').value.trim(),
     notes: document.getElementById('f_notes').value.trim(),
-    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : ''
+    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : '',
+    ordered: combinedOrdered
   };
   if(!rec.name){ alert('Name is required'); return; }
   closeForm();
