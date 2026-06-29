@@ -73,6 +73,7 @@
 
 <header style="display:none;" id="appHeader">
   <h1>Food + Drink (<span id="totalCount">0</span>) <button class="refresh" id="refreshBtn">refresh</button></h1>
+  <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <input class="search" id="searchBox" placeholder="Search name, category, location, notes...">
   <div class="row">
     <select id="categorySelect"><option value="">All categories</option></select>
@@ -219,6 +220,7 @@ async function loadAll(){
   }catch(e){
     console.warn('menu load failed', e);
     menus = {};
+    window.__menuLoadError = e.message;
   }
 }
 
@@ -424,6 +426,11 @@ async function init(){
     await loadAll();
     populateCategories();
     render();
+    if(window.__menuLoadError){
+      const b = document.getElementById('menuWarnBanner');
+      b.textContent = 'Menu data did not load: ' + window.__menuLoadError;
+      b.style.display = '';
+    }
     document.getElementById('gate').style.display = 'none';
     document.getElementById('appHeader').style.display = '';
     document.getElementById('addBtn').style.display = '';
