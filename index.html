@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Food + Drink List</title>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
 <style>
@@ -60,6 +63,21 @@
   .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;}
   @keyframes spin{to{transform:rotate(360deg);}}
   .errbox{background:rgba(224,98,95,.12);border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px;font-size:13px;margin-top:12px;max-width:340px;word-break:break-word;}
+  .ver{font-size:10px;color:var(--muted);margin:-6px 0 6px;letter-spacing:.03em;}
+  .ver a{color:var(--accent);text-decoration:underline;cursor:pointer;}
+  .flag{font-size:12px;flex-shrink:0;margin-left:2px;}
+  .flag.ok{color:var(--muted);}
+  .flag.warn{color:var(--accent);}
+  .mp-sec{margin-top:14px;}
+  .mp-sec h4{margin:0 0 4px;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;}
+  .mp-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;}
+  .mp-item:last-child{border-bottom:none;}
+  .mp-item button{background:none;border:none;color:var(--bad);font-size:16px;cursor:pointer;padding:2px 6px;flex:none;}
+  .addline{display:flex;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
+  .addline input{flex:1;min-width:0;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;}
+  .addline input.sec{flex:0 0 34%;}
+  .addline button{flex:none;padding:9px 14px;border-radius:8px;border:none;background:var(--accent);color:#1a1208;font-weight:600;font-size:14px;cursor:pointer;}
+  .bulklink{display:block;margin-top:10px;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;}
   .refresh{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;margin-left:auto;}
   .menurow{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
   .menurow input.mkey{flex:0 0 38%;}
@@ -83,6 +101,7 @@
 
 <header style="display:none;" id="appHeader">
   <h1>Food + Drink (<span id="totalCount">0</span>) <button class="refresh" id="refreshBtn">refresh</button></h1>
+  <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <input class="search" id="searchBox" placeholder="Search name, category, location, notes...">
   <div class="row">
@@ -91,6 +110,7 @@
     <div class="chip" data-rating="-">🤔 -</div>
     <div class="chip" data-rating="n">👎 n</div>
     <div class="chip" id="toOrderChip">⭐ To Order</div>
+    <div class="chip" id="unratedChip">⚠ menu, no rating</div>
   </div>
   <div class="count" id="resultCount"></div>
 </header>
@@ -103,6 +123,19 @@
 <div class="sheet" id="detailSheet">
   <button class="close-x" id="closeDetail">&times;</button>
   <div id="detailContent"></div>
+</div>
+
+<div class="sheet" id="menuPageSheet">
+  <button class="close-x" id="closeMenuPage">&times;</button>
+  <h2 id="menuPageTitle"></h2>
+  <div class="sub" id="menuPageSub"></div>
+  <div id="menuPageBody"></div>
+  <div class="addline">
+    <input class="sec" id="mp_section" placeholder="Section">
+    <input id="mp_item" placeholder="Item ordered">
+    <button id="mp_add" type="button">Add</button>
+  </div>
+  <span class="bulklink" id="mp_bulk">add several at once</span>
 </div>
 
 <div class="sheet" id="formSheet">
@@ -141,6 +174,7 @@
 
 <script>
 /* ====== CONFIG ====== */
+const APP_VERSION = "2026.07.28-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -263,12 +297,13 @@ async function loadAll(){
 }
 
 /* ====== UI ====== */
-let state = { query:'', category:'', ratings:new Set(), toOrderOnly:false, shown:60 };
+let state = { query:'', category:'', ratings:new Set(), toOrderOnly:false, unratedMenu:false, shown:60 };
 
 function matches(v){
   if(state.category && v.category !== state.category) return false;
   if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
   if(state.toOrderOnly && !(v.toOrder && String(v.toOrder).trim())) return false;
+  if(state.unratedMenu && !(hasMenu(v) && !(v.rating||'').trim())) return false;
   if(state.query){
     const q = state.query.toLowerCase();
     const eaten = menus[v.name] ? Object.entries(menus[v.name]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';
@@ -276,6 +311,10 @@ function matches(v){
     if(!hay.includes(q)) return false;
   }
   return true;
+}
+function hasMenu(v){
+  const m = menus[v.name];
+  return !!(m && Object.keys(m).length);
 }
 function ratingBadgeClass(r){
   r = (r||'').trim();
@@ -307,6 +346,7 @@ function render(){
     el.innerHTML = `
       <div class="item-top">
         <div class="item-name">${escapeHtml(v.name||'')}</div>
+        ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">${(v.rating||'').trim() ? '\u2713' : '\u26a0'}</span>` : ''}
         ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
       <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
@@ -335,6 +375,12 @@ document.querySelectorAll('.chip[data-rating]').forEach(chip => {
     render();
   });
 });
+document.getElementById('unratedChip').addEventListener('click', () => {
+  state.unratedMenu = !state.unratedMenu;
+  document.getElementById('unratedChip').classList.toggle('active', state.unratedMenu);
+  state.shown = 60;
+  render();
+});
 document.getElementById('toOrderChip').addEventListener('click', () => {
   state.toOrderOnly = !state.toOrderOnly;
   document.getElementById('toOrderChip').classList.toggle('active', state.toOrderOnly);
@@ -349,13 +395,7 @@ const menuFormSheet = document.getElementById('menuFormSheet');
 
 function openDetail(v){
   const eaten = menus[v.name] || {};
-  const secs = Object.keys(eaten).sort((x,y)=>x.localeCompare(y));
-  let menuHtml = '';
-  if(secs.length){
-    menuHtml = '<div class="field"><label>Eaten / ordered here</label>' +
-      secs.map(sec => `<div class="menu-group"><h4>${escapeHtml(sec)}</h4><p>${eaten[sec].map(escapeHtml).join(', ')}</p></div>`).join('') +
-      '</div>';
-  }
+  const itemCount = Object.values(eaten).reduce((n,a)=>n+a.length,0);
   const wants = String(v.toOrder||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
   const wantHtml = wants.length ? '<div class="field"><label>To Order</label>' +
     wants.map((w,i)=>`<div class="wantrow"><span>${escapeHtml(w)}</span><button class="ate" data-i="${i}" type="button">ate it</button></div>`).join('') +
@@ -367,10 +407,11 @@ function openDetail(v){
     ${wantHtml}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
-    ${menuHtml}
+    <div class="btnrow" style="margin-top:4px;">
+      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `Ordered here (${itemCount})` : 'Ordered here'}</button>
+    </div>
     <div class="btnrow">
       <button class="btn ghost" id="editBtn">Edit</button>
-      <button class="btn ghost" id="editMenuBtn">Log eaten</button>
       <button class="btn danger" id="deleteBtn">Delete</button>
     </div>
   `;
@@ -389,11 +430,13 @@ function openDetail(v){
         delete rec.index;
         await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
         await loadAll(); populateCategories(); render();
+        const fresh = venues.find(x => x.name === v.name) || v;
+        openMenuPage(fresh);
       });
     });
   });
   document.getElementById('editBtn').addEventListener('click', () => { closeDetail(); openForm(v); });
-  document.getElementById('editMenuBtn').addEventListener('click', () => { closeDetail(); openMenuForm(v); });
+  document.getElementById('openMenuPageBtn').addEventListener('click', () => { closeDetail(); openMenuPage(v); });
   document.getElementById('deleteBtn').addEventListener('click', async () => {
     if(!confirm(`Delete "${v.name}" from your Excel file?`)) return;
     closeDetail();
@@ -409,7 +452,7 @@ function openDetail(v){
 }
 function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); }
 document.getElementById('closeDetail').addEventListener('click', closeDetail);
-overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); });
+overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); closeMenuPage(); });
 
 let editingVenue = null;
 function openForm(v){
@@ -454,6 +497,83 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     populateCategories();
     render();
   });
+});
+
+/* ====== Menu page: what has been ordered here ====== */
+const menuPageSheet = document.getElementById('menuPageSheet');
+let menuPageVenue = null;
+
+function renderMenuPage(){
+  const v = menuPageVenue;
+  if(!v) return;
+  const eaten = menus[v.name] || {};
+  const secs = Object.keys(eaten).sort((a,b)=>a.localeCompare(b));
+  const count = Object.values(eaten).reduce((n,a)=>n+a.length,0);
+  document.getElementById('menuPageTitle').textContent = v.name;
+  document.getElementById('menuPageSub').textContent =
+    count ? count + ' item' + (count===1?'':'s') + ' ordered' : 'Nothing recorded yet';
+  const body = document.getElementById('menuPageBody');
+  body.innerHTML = secs.map(sec => `
+    <div class="mp-sec">
+      <h4>${escapeHtml(sec)}</h4>
+      ${eaten[sec].map(item => `
+        <div class="mp-item">
+          <span>${escapeHtml(item)}</span>
+          <button type="button" data-sec="${escapeHtml(sec)}" data-item="${escapeHtml(item)}" title="remove">&times;</button>
+        </div>`).join('')}
+    </div>`).join('');
+  body.querySelectorAll('.mp-item button').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sec = btn.dataset.sec, item = btn.dataset.item;
+      if(!confirm('Remove "' + item + '" from ' + v.name + '?')) return;
+      const row = menuRows.find(r => r.venue === v.name && (r.section||'Other') === sec && r.item === item);
+      if(!row) return;
+      await withBusy(async () => {
+        await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${row.index})/delete`);
+        await loadAll(); populateCategories(); render(); renderMenuPage();
+      });
+    });
+  });
+}
+
+function openMenuPage(v){
+  menuPageVenue = v;
+  document.getElementById('mp_section').value = '';
+  document.getElementById('mp_item').value = '';
+  renderMenuPage();
+  overlay.classList.add('open');
+  menuPageSheet.classList.add('open');
+}
+function closeMenuPage(){ overlay.classList.remove('open'); menuPageSheet.classList.remove('open'); menuPageVenue=null; }
+document.getElementById('closeMenuPage').addEventListener('click', closeMenuPage);
+
+async function addOrderedItem(){
+  const v = menuPageVenue;
+  if(!v) return;
+  const sec = document.getElementById('mp_section').value.trim() || 'Other';
+  const item = document.getElementById('mp_item').value.trim();
+  if(!item){ alert('Enter an item.'); return; }
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: [[v.name, v.location||'', sec, item]] });
+    if(v.hasMenuDetail !== 'x'){
+      const rec = Object.assign({}, v, { hasMenuDetail: 'x' });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
+    }
+    await loadAll(); populateCategories(); render();
+    menuPageVenue = venues.find(x => x.name === v.name) || v;
+    document.getElementById('mp_item').value = '';
+    document.getElementById('mp_item').focus();
+    renderMenuPage();
+  });
+}
+document.getElementById('mp_add').addEventListener('click', addOrderedItem);
+document.getElementById('mp_item').addEventListener('keydown', e => { if(e.key==='Enter') addOrderedItem(); });
+document.getElementById('mp_bulk').addEventListener('click', () => {
+  const v = menuPageVenue;
+  closeMenuPage();
+  openMenuForm(v);
 });
 
 /* ====== Menu edit form ====== */
@@ -504,6 +624,8 @@ document.getElementById('saveMenuForm').addEventListener('click', async () => {
       await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
     }
     await loadAll(); populateCategories(); render();
+    const fresh = venues.find(x => x.name === v.name) || v;
+    openMenuPage(fresh);
   });
 });
 
@@ -582,6 +704,33 @@ function showGateError(msg){
   document.getElementById('retryBtn').addEventListener('click', () => location.reload());
 }
 
+/* ====== VERSION CHECK ====== */
+async function checkVersion(){
+  const line = document.getElementById('verLine');
+  if(line) line.textContent = 'build ' + APP_VERSION;
+  let latest;
+  try{
+    const res = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+    if(!res.ok) return;
+    latest = (await res.text()).trim();
+  }catch(e){ return; }
+  if(!latest || latest === APP_VERSION) return;
+
+  // a newer build exists - reload once, bypassing the cached copy
+  if(sessionStorage.getItem('fd_reloaded_for') === latest){
+    if(line) line.innerHTML = 'build ' + APP_VERSION +
+      ' &mdash; version ' + latest + ' available. <a id="hardReload">reload</a>';
+    const a = document.getElementById('hardReload');
+    if(a) a.addEventListener('click', () => {
+      location.replace(location.pathname + '?v=' + encodeURIComponent(latest));
+    });
+    return;
+  }
+  sessionStorage.setItem('fd_reloaded_for', latest);
+  location.replace(location.pathname + '?v=' + encodeURIComponent(latest));
+}
+
+checkVersion();
 init();
 </script>
 </body>
