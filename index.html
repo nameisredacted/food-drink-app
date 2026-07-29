@@ -29,8 +29,7 @@
   .badge.n{background:rgba(224,98,95,.18);color:var(--bad);}
   .badge.dash{background:rgba(154,163,175,.18);color:var(--maybe);}
   .item-sub{font-size:13px;color:var(--muted);margin-top:3px;}
-  .toorder{display:inline-block;margin-top:6px;margin-right:6px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:1px 6px;}
-  .ordered{display:inline-block;margin-top:6px;font-size:11px;color:var(--good);border:1px solid var(--good);border-radius:6px;padding:1px 6px;}
+  .toorder{display:inline-block;margin-top:6px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:1px 6px;}
   .more{display:block;width:100%;padding:12px;text-align:center;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
   .fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a1208;font-size:28px;display:flex;align-items:center;justify-content:center;border:none;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:20;}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:none;}
@@ -67,6 +66,9 @@
   .menurow input.mval{flex:1;}
   .menurow button.rm{flex:none;background:none;border:none;color:var(--bad);font-size:18px;cursor:pointer;padding:4px 6px;}
   .addRowBtn{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;margin-top:4px;}
+  .wantrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);}
+  .wantrow:last-child{border-bottom:none;}
+  .wantrow .ate{font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card2);color:var(--accent);cursor:pointer;}
 </style>
 </head>
 <body>
@@ -89,7 +91,6 @@
     <div class="chip" data-rating="-">🤔 -</div>
     <div class="chip" data-rating="n">👎 n</div>
     <div class="chip" id="toOrderChip">⭐ To Order</div>
-    <div class="chip" id="orderedChip">🍽️ Ordered</div>
   </div>
   <div class="count" id="resultCount"></div>
 </header>
@@ -117,11 +118,8 @@
   </div>
   <div class="field"><label>To Order</label><input id="f_toOrder" placeholder="e.g. tacos al pastor"></div>
   <div class="field">
-    <label>Ordered</label>
-    <div class="locked" id="f_ordered_existing">(nothing yet)</div>
     <div class="hint">Existing entries can't be removed here — only added to.</div>
-    <input id="f_ordered_add" placeholder="Add an item you've actually ordered" style="margin-top:6px;">
-  </div>
+    </div>
   <div class="field"><label>Notes</label><textarea id="f_notes"></textarea></div>
   <div class="btnrow">
     <button class="btn ghost" id="cancelForm">Cancel</button>
@@ -147,7 +145,7 @@ const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
 // Path to the file inside the user's OneDrive, relative to drive root.
-const FILE_PATH = "the list/Food + Drink/Claude/Food Repository.xlsx";
+const FILE_PATH = "the list/Food + Drink/Claude/Food + Drink.xlsx";
 const MAIN_SHEET = "Food + Drink";
 const MAIN_TABLE = "FoodDrinkTable";
 const MENU_SHEET = "Menu Details";
@@ -204,7 +202,7 @@ async function graph(method, path, body){
   return res.json();
 }
 
-const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','ordered'];
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address'];
 
 function rowToObj(rowValues, index){
   const o = { index };
@@ -216,8 +214,8 @@ function objToRow(o){
 }
 
 let venues = [];
-let menus = {};       // name -> { index, values: { header: val } }
-let menuHeaders = []; // ordered list of category column headers (excludes "Venue")
+let menuRows = [];    // [{index, venue, location, section, item}] - every row already eaten
+let menus = {};       // venue name -> { section -> [items] }
 
 async function loadAll(){
   // load table rows (paged)
@@ -230,12 +228,9 @@ async function loadAll(){
   }
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
 
-  // load menu details via its table (gives row indexes so we can edit/add)
+  // Menu Details is a flat log of what has already been ordered / eaten:
+  // Venue | Location | Section | Item
   try{
-    const headerData = await graph('GET', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/range(address='A1:BA1')`);
-    const headerRow = headerData.values[0];
-    menuHeaders = headerRow.slice(1).filter(h => h !== null && h !== undefined && String(h).trim() !== '');
-
     let mrows = [];
     let mnext = `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`;
     while(mnext){
@@ -243,38 +238,41 @@ async function loadAll(){
       mrows = mrows.concat(data.value);
       mnext = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
     }
+    menuRows = mrows.map((r,i) => {
+      const v = r.values[0];
+      return {
+        index: r.index !== undefined ? r.index : i,
+        venue:   v[0]!=null ? String(v[0]) : '',
+        location:v[1]!=null ? String(v[1]) : '',
+        section: v[2]!=null ? String(v[2]) : '',
+        item:    v[3]!=null ? String(v[3]) : ''
+      };
+    }).filter(r => r.venue);
     menus = {};
-    mrows.forEach((r, i) => {
-      const rowVals = r.values[0];
-      const venueName = rowVals[0];
-      if(!venueName) return;
-      const values = {};
-      headerRow.slice(1).forEach((h, idx) => {
-        if(h === null || h === undefined || String(h).trim() === '') return;
-        const v = rowVals[idx+1];
-        if(v !== null && v !== undefined && String(v).trim() !== '') values[h] = v;
-      });
-      menus[venueName] = { index: r.index !== undefined ? r.index : i, values };
+    menuRows.forEach(r => {
+      if(!menus[r.venue]) menus[r.venue] = {};
+      const sec = r.section || 'Other';
+      if(!menus[r.venue][sec]) menus[r.venue][sec] = [];
+      if(r.item) menus[r.venue][sec].push(r.item);
     });
   }catch(e){
     console.warn('menu load failed', e);
-    menus = {};
-    menuHeaders = [];
+    menuRows = []; menus = {};
     window.__menuLoadError = e.message;
   }
 }
 
 /* ====== UI ====== */
-let state = { query:'', category:'', ratings:new Set(), toOrderOnly:false, orderedOnly:false, shown:60 };
+let state = { query:'', category:'', ratings:new Set(), toOrderOnly:false, shown:60 };
 
 function matches(v){
   if(state.category && v.category !== state.category) return false;
   if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
   if(state.toOrderOnly && !(v.toOrder && String(v.toOrder).trim())) return false;
-  if(state.orderedOnly && !(v.ordered && String(v.ordered).trim())) return false;
   if(state.query){
     const q = state.query.toLowerCase();
-    const hay = [v.name, v.category, v.location, v.notes, v.address, v.toOrder, v.ordered].filter(Boolean).join(' ').toLowerCase();
+    const eaten = menus[v.name] ? Object.entries(menus[v.name]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';
+    const hay = [v.name, v.category, v.location, v.notes, v.address, v.toOrder, eaten].filter(Boolean).join(' ').toLowerCase();
     if(!hay.includes(q)) return false;
   }
   return true;
@@ -312,8 +310,7 @@ function render(){
         <div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml((v.rating||'-').trim()||'-')}</div>
       </div>
       <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
-      ${v.toOrder ? `<div class="toorder">⭐ ${escapeHtml(String(v.toOrder))}</div>` : ''}
-      ${v.ordered ? `<div class="ordered">🍽️ ${escapeHtml(String(v.ordered))}</div>` : ''}
+      ${v.toOrder ? `<div class="toorder">${escapeHtml(String(v.toOrder))}</div>` : ''}
     `;
     el.addEventListener('click', () => openDetail(v));
     list.appendChild(el);
@@ -344,12 +341,6 @@ document.getElementById('toOrderChip').addEventListener('click', () => {
   state.shown = 60;
   render();
 });
-document.getElementById('orderedChip').addEventListener('click', () => {
-  state.orderedOnly = !state.orderedOnly;
-  document.getElementById('orderedChip').classList.toggle('active', state.orderedOnly);
-  state.shown = 60;
-  render();
-});
 
 const overlay = document.getElementById('overlay');
 const detailSheet = document.getElementById('detailSheet');
@@ -357,28 +348,50 @@ const formSheet = document.getElementById('formSheet');
 const menuFormSheet = document.getElementById('menuFormSheet');
 
 function openDetail(v){
-  const menu = menus[v.name];
+  const eaten = menus[v.name] || {};
+  const secs = Object.keys(eaten).sort((x,y)=>x.localeCompare(y));
   let menuHtml = '';
-  if(menu && Object.keys(menu.values).length){
-    menuHtml = '<div class="field"><label>Menu Items</label>' +
-      Object.entries(menu.values).map(([k,val]) => `<div class="menu-group"><h4>${escapeHtml(k)}</h4><p>${escapeHtml(val)}</p></div>`).join('') +
+  if(secs.length){
+    menuHtml = '<div class="field"><label>Eaten / ordered here</label>' +
+      secs.map(sec => `<div class="menu-group"><h4>${escapeHtml(sec)}</h4><p>${eaten[sec].map(escapeHtml).join(', ')}</p></div>`).join('') +
       '</div>';
   }
+  const wants = String(v.toOrder||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
+  const wantHtml = wants.length ? '<div class="field"><label>To Order</label>' +
+    wants.map((w,i)=>`<div class="wantrow"><span>${escapeHtml(w)}</span><button class="ate" data-i="${i}" type="button">ate it</button></div>`).join('') +
+    '</div>' : '';
   document.getElementById('detailContent').innerHTML = `
     <h2>${escapeHtml(v.name||'')}</h2>
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
     <div class="field"><label>Rating</label><div class="badge ${ratingBadgeClass(v.rating)}" style="display:inline-block;">${escapeHtml((v.rating||'-').trim()||'-')}</div></div>
-    ${v.toOrder ? `<div class="field"><label>To Order</label><div>${escapeHtml(String(v.toOrder))}</div></div>` : ''}
-    ${v.ordered ? `<div class="field"><label>Ordered</label><div>${escapeHtml(String(v.ordered))}</div></div>` : ''}
+    ${wantHtml}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
     ${menuHtml}
     <div class="btnrow">
       <button class="btn ghost" id="editBtn">Edit</button>
-      <button class="btn ghost" id="editMenuBtn">${menu ? 'Edit Menu' : 'Add Menu'}</button>
+      <button class="btn ghost" id="editMenuBtn">Log eaten</button>
       <button class="btn danger" id="deleteBtn">Delete</button>
     </div>
   `;
+  document.querySelectorAll('#detailContent .ate').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i = parseInt(btn.dataset.i,10);
+      const item = wants[i];
+      const section = prompt('Which part of the menu is "' + item + '"?', 'Other');
+      if(section === null) return;
+      const remaining = wants.filter((_,j)=>j!==i).join('; ');
+      closeDetail();
+      await withBusy(async () => {
+        await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+          { values: [[v.name, v.location||'', section.trim()||'Other', item]] });
+        const rec = Object.assign({}, v, { toOrder: remaining, hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
+        await loadAll(); populateCategories(); render();
+      });
+    });
+  });
   document.getElementById('editBtn').addEventListener('click', () => { closeDetail(); openForm(v); });
   document.getElementById('editMenuBtn').addEventListener('click', () => { closeDetail(); openMenuForm(v); });
   document.getElementById('deleteBtn').addEventListener('click', async () => {
@@ -408,8 +421,6 @@ function openForm(v){
   document.getElementById('f_address').value = v ? (v.address||'') : '';
   document.getElementById('f_rating').value = v ? ((v.rating||'-').trim()||'-') : '-';
   document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
-  document.getElementById('f_ordered_existing').textContent = (v && v.ordered && v.ordered.trim()) ? v.ordered : '(nothing yet)';
-  document.getElementById('f_ordered_add').value = '';
   document.getElementById('f_notes').value = v ? (v.notes||'') : '';
   overlay.classList.add('open');
   formSheet.classList.add('open');
@@ -421,12 +432,6 @@ document.getElementById('cancelForm').addEventListener('click', closeForm);
 document.getElementById('refreshBtn').addEventListener('click', () => withBusy(async () => { await loadAll(); populateCategories(); render(); }));
 
 document.getElementById('saveForm').addEventListener('click', async () => {
-  const existingOrdered = (editingVenue && editingVenue.ordered) ? editingVenue.ordered.trim() : '';
-  const addition = document.getElementById('f_ordered_add').value.trim();
-  const combinedOrdered = existingOrdered && addition
-    ? existingOrdered + ', ' + addition
-    : (existingOrdered || addition);
-
   const rec = {
     name: document.getElementById('f_name').value.trim(),
     category: document.getElementById('f_category').value.trim(),
@@ -435,8 +440,7 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     rating: document.getElementById('f_rating').value,
     toOrder: document.getElementById('f_toOrder').value.trim(),
     notes: document.getElementById('f_notes').value.trim(),
-    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : '',
-    ordered: combinedOrdered
+    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : ''
   };
   if(!rec.name){ alert('Name is required'); return; }
   closeForm();
@@ -460,8 +464,8 @@ function addMenuRow(key, val){
   const row = document.createElement('div');
   row.className = 'menurow';
   row.innerHTML = `
-    <input class="mkey" placeholder="Category (e.g. Appetizers)" value="${escapeHtml(key||'')}">
-    <input class="mval" placeholder="Item(s)" value="${escapeHtml(val||'')}">
+    <input class="mkey" placeholder="Section (e.g. Appetizers)" value="${escapeHtml(key||'')}">
+    <input class="mval" placeholder="Item you ate" value="${escapeHtml(val||'')}">
     <button class="rm" type="button">&times;</button>
   `;
   row.querySelector('.rm').addEventListener('click', () => row.remove());
@@ -470,16 +474,11 @@ function addMenuRow(key, val){
 
 function openMenuForm(v){
   menuEditingVenue = v;
-  document.getElementById('menuFormTitle').textContent = (menus[v.name] ? 'Edit Menu — ' : 'Add Menu — ') + v.name;
+  document.getElementById('menuFormTitle').textContent = 'Log eaten — ' + v.name;
   const wrap = document.getElementById('menuRows');
   wrap.innerHTML = '';
-  const existing = menus[v.name] ? menus[v.name].values : {};
-  const keys = Object.keys(existing);
-  if(keys.length){
-    keys.forEach(k => addMenuRow(k, existing[k]));
-  } else {
-    addMenuRow('', '');
-  }
+  addMenuRow('', '');
+  addMenuRow('', '');
   overlay.classList.add('open');
   menuFormSheet.classList.add('open');
 }
@@ -491,40 +490,22 @@ document.getElementById('cancelMenuForm').addEventListener('click', closeMenuFor
 document.getElementById('saveMenuForm').addEventListener('click', async () => {
   const v = menuEditingVenue;
   if(!v) return;
-  const rows = Array.from(document.querySelectorAll('#menuRows .menurow'));
-  const pairs = rows.map(r => ({
-    key: r.querySelector('.mkey').value.trim(),
-    val: r.querySelector('.mval').value.trim()
-  })).filter(p => p.key);
-
-  // make sure every header used here exists in our known header list;
-  // unknown headers can't be written because that would require adding a
-  // new column to the Excel table, which this app doesn't do.
-  const unknown = pairs.filter(p => !menuHeaders.includes(p.key));
-  if(unknown.length){
-    alert('These categories don\'t exist as columns yet in the Menu Details sheet, so they can\'t be saved from here: ' +
-      unknown.map(p=>p.key).join(', ') + '\n\nAdd the column in Excel first, then it will show up here.');
-    return;
-  }
-
-  const rowValues = new Array(menuHeaders.length + 1).fill('');
-  rowValues[0] = v.name;
-  pairs.forEach(p => {
-    const idx = menuHeaders.indexOf(p.key);
-    if(idx > -1) rowValues[idx+1] = p.val;
-  });
-
+  const pairs = Array.from(document.querySelectorAll('#menuRows .menurow')).map(r => ({
+    section: r.querySelector('.mkey').value.trim() || 'Other',
+    item:    r.querySelector('.mval').value.trim()
+  })).filter(p => p.item);
+  if(!pairs.length){ alert('Add at least one item.'); return; }
   closeMenuForm();
   await withBusy(async () => {
-    const existingEntry = menus[v.name];
-    if(existingEntry){
-      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${existingEntry.index})`, { values: [rowValues] });
-    } else {
-      await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`, { values: [rowValues] });
+    // Menu Details is a flat log - one row per item eaten
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: pairs.map(p => [v.name, v.location||'', p.section, p.item]) });
+    if(v.hasMenuDetail !== 'x'){
+      const rec = Object.assign({}, v, { hasMenuDetail: 'x' });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
     }
-    await loadAll();
-    populateCategories();
-    render();
+    await loadAll(); populateCategories(); render();
   });
 });
 
