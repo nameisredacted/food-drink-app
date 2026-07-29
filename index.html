@@ -114,7 +114,7 @@
   <div class="field"><label>Location</label><input id="f_location"></div>
   <div class="field"><label>Address</label><input id="f_address"></div>
   <div class="field"><label>Rating</label>
-    <select id="f_rating"><option value="-">- (unsure)</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
+    <select id="f_rating"><option value=""></option><option value="-">-</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
   </div>
   <div class="field"><label>To Order</label><input id="f_toOrder" placeholder="e.g. tacos al pastor"></div>
   <div class="field">
@@ -214,8 +214,8 @@ function objToRow(o){
 }
 
 let venues = [];
-let menuRows = [];    // [{index, venue, location, section, item}] - every row already eaten
-let menus = {};       // venue name -> { section -> [items] }
+let menuRows = [];
+let menus = {};
 
 async function loadAll(){
   // load table rows (paged)
@@ -307,7 +307,7 @@ function render(){
     el.innerHTML = `
       <div class="item-top">
         <div class="item-name">${escapeHtml(v.name||'')}</div>
-        <div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml((v.rating||'-').trim()||'-')}</div>
+        ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
       <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
       ${v.toOrder ? `<div class="toorder">${escapeHtml(String(v.toOrder))}</div>` : ''}
@@ -363,7 +363,7 @@ function openDetail(v){
   document.getElementById('detailContent').innerHTML = `
     <h2>${escapeHtml(v.name||'')}</h2>
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
-    <div class="field"><label>Rating</label><div class="badge ${ratingBadgeClass(v.rating)}" style="display:inline-block;">${escapeHtml((v.rating||'-').trim()||'-')}</div></div>
+    ${(v.rating||'').trim() ? `<div class="field"><label>Rating</label><div class="badge ${ratingBadgeClass(v.rating)}" style="display:inline-block;">${escapeHtml(v.rating.trim())}</div></div>` : ''}
     ${wantHtml}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
@@ -419,7 +419,7 @@ function openForm(v){
   document.getElementById('f_category').value = v ? (v.category||'') : '';
   document.getElementById('f_location').value = v ? (v.location||'') : '';
   document.getElementById('f_address').value = v ? (v.address||'') : '';
-  document.getElementById('f_rating').value = v ? ((v.rating||'-').trim()||'-') : '-';
+  document.getElementById('f_rating').value = v ? (v.rating||'').trim() : '';
   document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
   document.getElementById('f_notes').value = v ? (v.notes||'') : '';
   overlay.classList.add('open');
@@ -477,8 +477,7 @@ function openMenuForm(v){
   document.getElementById('menuFormTitle').textContent = 'Log eaten — ' + v.name;
   const wrap = document.getElementById('menuRows');
   wrap.innerHTML = '';
-  addMenuRow('', '');
-  addMenuRow('', '');
+  addMenuRow('', ''); addMenuRow('', '');
   overlay.classList.add('open');
   menuFormSheet.classList.add('open');
 }
@@ -497,7 +496,6 @@ document.getElementById('saveMenuForm').addEventListener('click', async () => {
   if(!pairs.length){ alert('Add at least one item.'); return; }
   closeMenuForm();
   await withBusy(async () => {
-    // Menu Details is a flat log - one row per item eaten
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
       { values: pairs.map(p => [v.name, v.location||'', p.section, p.item]) });
     if(v.hasMenuDetail !== 'x'){
