@@ -17,7 +17,9 @@
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);}
   header{position:sticky;top:0;background:var(--bg);padding:12px 14px 8px;z-index:10;border-bottom:1px solid var(--border);}
   h1{font-size:18px;margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px;}
-  .search{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;}
+  .searchrow{display:flex;gap:8px;align-items:center;}
+  .clearall{flex:none;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-size:13px;cursor:pointer;}
+  .search{width:40%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;}
   .row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;}
   select, .chip{font-size:13px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);}
   .chip{cursor:pointer;user-select:none;}
@@ -32,7 +34,8 @@
   .badge.n{background:rgba(224,98,95,.18);color:var(--bad);}
   .badge.dash{background:rgba(154,163,175,.18);color:var(--maybe);}
   .item-sub{font-size:13px;color:var(--muted);margin-top:3px;}
-  .toorder{display:inline-block;margin-top:6px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:1px 6px;}
+  .toorder{margin-top:5px;font-size:12px;color:var(--text);}
+  .tolabel{color:var(--muted);}
   .more{display:block;width:100%;padding:12px;text-align:center;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
   .fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a1208;font-size:28px;display:flex;align-items:center;justify-content:center;border:none;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:20;}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:none;}
@@ -129,18 +132,19 @@
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
-    <input class="search" id="searchBox" placeholder="Search name, category, location, notes..." autocomplete="off">
+    <div class="searchrow">
+      <input class="search" id="searchBox" placeholder="Search..." autocomplete="off">
+      <button class="clearall" id="clearAllBtn" type="button">clear all</button>
+    </div>
     <div class="suggest" id="suggestBox"></div>
   </div>
   <div class="row">
     <select id="categorySelect"><option value="">All categories</option></select>
-    <div class="chip" data-rating="y">👍 y</div>
-    <div class="chip" data-rating="-">🤔 -</div>
-    <div class="chip" data-rating="n">👎 n</div>
-    <div class="chip" id="toOrderChip">⭐ To Order</div>
-    <div class="chip" id="unratedChip">⚠ menu, no rating</div>
-    <div class="chip near" id="nearChip">📍 nearest</div>
-    <div class="chip dice" id="diceChip">🎲 pick one</div>
+    <div class="chip" data-rating="y">y</div>
+    <div class="chip" data-rating="-">-</div>
+    <div class="chip" data-rating="n">n</div>
+    <div class="chip near" id="nearChip">nearest</div>
+    <div class="chip dice" id="diceChip">pick one</div>
   </div>
   <div class="count" id="resultCount"></div>
   <div class="count" id="geoNote" style="display:none;">* approximate (ZIP-level) — refines as you use it</div>
@@ -205,7 +209,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.29-1";
+const APP_VERSION = "2026.07.29-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -338,7 +342,7 @@ async function loadAll(){
 }
 
 /* ====== UI ====== */
-let state = { query:'', category:'', ratings:new Set(), toOrderOnly:false, unratedMenu:false, shown:60, near:null };
+let state = { query:'', category:'', ratings:new Set(), shown:60, near:null };
 
 function haversine(a, b, c, d){
   const R = 3958.8, t = Math.PI/180;
@@ -360,8 +364,6 @@ function fmtDist(d){
 function matches(v){
   if(state.category && v.category !== state.category) return false;
   if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
-  if(state.toOrderOnly && !(v.toOrder && String(v.toOrder).trim())) return false;
-  if(state.unratedMenu && !(hasMenu(v) && !(v.rating||'').trim())) return false;
   if(state.query){
     const q = state.query.toLowerCase();
     const eaten = menus[v.name] ? Object.entries(menus[v.name]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';
@@ -418,11 +420,11 @@ function render(){
     el.innerHTML = `
       <div class="item-top">
         <div class="item-name">${escapeHtml(v.name||'')}</div>
-        ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">${(v.rating||'').trim() ? '\u2713' : '\u26a0'}</span>` : ''}
+        ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">\u2713</span>` : ''}
         ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
       <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${state.near ? `<span class="dist">${fmtDist(distOf(v))}${v.geo!=='exact'?'*':''}</span>` : ''}</div>
-      ${v.toOrder ? `<div class="toorder">${escapeHtml(String(v.toOrder))}</div>` : ''}
+      ${v.toOrder ? `<div class="toorder"><span class="tolabel">To Order:</span> ${escapeHtml(String(v.toOrder).split(/[;,]/).map(x=>x.trim()).filter(Boolean).join(', '))}</div>` : ''}
     `;
     el.addEventListener('click', () => openDetail(v));
     list.appendChild(el);
@@ -501,16 +503,16 @@ document.querySelectorAll('.chip[data-rating]').forEach(chip => {
 });
 document.getElementById('nearChip').addEventListener('click', () => {
   const chip = document.getElementById('nearChip');
-  if(state.near){ state.near=null; chip.classList.remove('active'); chip.textContent='📍 nearest'; state.shown=60; render(); return; }
+  if(state.near){ state.near=null; chip.classList.remove('active'); chip.textContent='nearest'; state.shown=60; render(); return; }
   if(!navigator.geolocation){ alert('This browser has no location support.'); return; }
-  chip.textContent='📍 locating…';
+  chip.textContent='locating…';
   navigator.geolocation.getCurrentPosition(pos => {
     state.near = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-    chip.classList.add('active'); chip.textContent='📍 nearest';
+    chip.classList.add('active'); chip.textContent='nearest';
     state.shown = 40; render();
     refineNearby();
   }, err => {
-    chip.textContent='📍 nearest';
+    chip.textContent='nearest';
     alert('Could not get your location: ' + err.message + '\n\nOn iPhone: Settings > Safari > Location.');
   }, { enableHighAccuracy:true, timeout:10000, maximumAge:60000 });
 });
@@ -523,16 +525,14 @@ document.getElementById('diceChip').addEventListener('click', () => {
   openDetail(pick);
 });
 
-document.getElementById('unratedChip').addEventListener('click', () => {
-  state.unratedMenu = !state.unratedMenu;
-  document.getElementById('unratedChip').classList.toggle('active', state.unratedMenu);
-  state.shown = 60;
-  render();
-});
-document.getElementById('toOrderChip').addEventListener('click', () => {
-  state.toOrderOnly = !state.toOrderOnly;
-  document.getElementById('toOrderChip').classList.toggle('active', state.toOrderOnly);
-  state.shown = 60;
+
+document.getElementById('clearAllBtn').addEventListener('click', () => {
+  state.query=''; state.category=''; state.ratings.clear(); state.near=null; state.shown=60;
+  document.getElementById('searchBox').value='';
+  document.getElementById('categorySelect').value='';
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('nearChip').textContent='nearest';
+  hideSuggest();
   render();
 });
 
@@ -545,7 +545,7 @@ function openDetail(v){
   const eaten = menus[v.name] || {};
   const itemCount = Object.values(eaten).reduce((n,a)=>n+a.length,0);
   const wants = String(v.toOrder||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
-  const wantHtml = wants.length ? '<div class="field"><label>To Order</label>' +
+  const wantHtml = wants.length ? '<div class="field"><label>To Order:</label>' +
     wants.map((w,i)=>`<div class="wantrow"><span>${escapeHtml(w)}</span><button class="ate" data-i="${i}" type="button">ate it</button></div>`).join('') +
     '</div>' : '';
   document.getElementById('detailContent').innerHTML = `
@@ -562,7 +562,7 @@ function openDetail(v){
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     <div class="btnrow" style="margin-top:4px;">
       <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `Ordered (${itemCount})` : 'Ordered'}</button>
-      ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">🎲 again (${lastPickPool})</button>` : ''}
+      ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">again (${lastPickPool})</button>` : ''}
     </div>
     <div class="btnrow">
       <button class="btn ghost" id="editBtn">Edit</button>
