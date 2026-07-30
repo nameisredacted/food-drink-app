@@ -173,7 +173,6 @@
   <div class="field"><label>Name</label><input id="f_name"></div>
   <div class="field"><label>Category</label><input id="f_category"></div>
   <div class="field"><label>Location</label><input id="f_location"></div>
-  <div class="field"><label>Address</label><input id="f_address"></div>
   <div class="field"><label>Rating</label>
     <select id="f_rating"><option value=""></option><option value="-">-</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
   </div>
@@ -202,7 +201,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.28-5";
+const APP_VERSION = "2026.07.28-7";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -335,7 +334,7 @@ function matches(v){
   if(state.query){
     const q = state.query.toLowerCase();
     const eaten = menus[v.name] ? Object.entries(menus[v.name]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';
-    const hay = [v.name, v.category, v.location, v.notes, v.address, v.toOrder, eaten].filter(Boolean).join(' ').toLowerCase();
+    const hay = [v.name, v.category, v.location, v.notes, v.toOrder, eaten].filter(Boolean).join(' ').toLowerCase();
     if(!hay.includes(q)) return false;
   }
   return true;
@@ -508,9 +507,8 @@ function openDetail(v){
     </div>
     ${wantHtml}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
-    ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
     <div class="btnrow" style="margin-top:4px;">
-      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `Ordered here (${itemCount})` : 'Ordered here'}</button>
+      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `Ordered (${itemCount})` : 'Ordered'}</button>
       ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">🎲 again (${lastPickPool})</button>` : ''}
     </div>
     <div class="btnrow">
@@ -593,7 +591,6 @@ function openForm(v){
   document.getElementById('f_name').value = v ? (v.name||'') : '';
   document.getElementById('f_category').value = v ? (v.category||'') : '';
   document.getElementById('f_location').value = v ? (v.location||'') : '';
-  document.getElementById('f_address').value = v ? (v.address||'') : '';
   document.getElementById('f_rating').value = v ? (v.rating||'').trim() : '';
   document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
   document.getElementById('f_notes').value = v ? (v.notes||'') : '';
@@ -611,7 +608,7 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     name: document.getElementById('f_name').value.trim(),
     category: document.getElementById('f_category').value.trim(),
     location: document.getElementById('f_location').value.trim(),
-    address: document.getElementById('f_address').value.trim(),
+    address: editingVenue ? (editingVenue.address||'') : '',
     rating: document.getElementById('f_rating').value,
     toOrder: document.getElementById('f_toOrder').value.trim(),
     notes: document.getElementById('f_notes').value.trim(),
