@@ -65,6 +65,9 @@
   .errbox{background:rgba(224,98,95,.12);border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px;font-size:13px;margin-top:12px;max-width:340px;word-break:break-word;}
   .ver{font-size:10px;color:var(--muted);margin:-6px 0 6px;letter-spacing:.03em;}
   .ver a{color:var(--accent);text-decoration:underline;cursor:pointer;}
+  .chip.dice{background:var(--accent);color:#1a1208;border-color:var(--accent);font-weight:600;}
+  .chip.dice:active{opacity:.75;}
+  .pickfrom{font-size:11px;color:var(--muted);margin-top:2px;}
   .flag{font-size:12px;flex-shrink:0;margin-left:2px;}
   .flag.ok{color:var(--muted);}
   .flag.warn{color:var(--accent);}
@@ -111,6 +114,7 @@
     <div class="chip" data-rating="n">👎 n</div>
     <div class="chip" id="toOrderChip">⭐ To Order</div>
     <div class="chip" id="unratedChip">⚠ menu, no rating</div>
+    <div class="chip dice" id="diceChip">🎲 pick one</div>
   </div>
   <div class="count" id="resultCount"></div>
 </header>
@@ -174,7 +178,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.28-2";
+const APP_VERSION = "2026.07.28-3";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -375,6 +379,14 @@ document.querySelectorAll('.chip[data-rating]').forEach(chip => {
     render();
   });
 });
+document.getElementById('diceChip').addEventListener('click', () => {
+  const pool = venues.filter(matches);
+  if(!pool.length){ alert('Nothing matches the current filters.'); return; }
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  lastPickPool = pool.length;
+  openDetail(pick);
+});
+
 document.getElementById('unratedChip').addEventListener('click', () => {
   state.unratedMenu = !state.unratedMenu;
   document.getElementById('unratedChip').classList.toggle('active', state.unratedMenu);
@@ -409,6 +421,7 @@ function openDetail(v){
     ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
     <div class="btnrow" style="margin-top:4px;">
       <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `Ordered here (${itemCount})` : 'Ordered here'}</button>
+      ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">🎲 again (${lastPickPool})</button>` : ''}
     </div>
     <div class="btnrow">
       <button class="btn ghost" id="editBtn">Edit</button>
@@ -435,6 +448,12 @@ function openDetail(v){
       });
     });
   });
+  const reroll = document.getElementById('rerollBtn');
+  if(reroll) reroll.addEventListener('click', () => {
+    const pool = venues.filter(matches).filter(x => x.name !== v.name);
+    if(!pool.length){ alert('No other options match.'); return; }
+    openDetail(pool[Math.floor(Math.random() * pool.length)]);
+  });
   document.getElementById('editBtn').addEventListener('click', () => { closeDetail(); openForm(v); });
   document.getElementById('openMenuPageBtn').addEventListener('click', () => { closeDetail(); openMenuPage(v); });
   document.getElementById('deleteBtn').addEventListener('click', async () => {
@@ -450,10 +469,11 @@ function openDetail(v){
   overlay.classList.add('open');
   detailSheet.classList.add('open');
 }
-function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); }
+function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); lastPickPool = 0; }
 document.getElementById('closeDetail').addEventListener('click', closeDetail);
 overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); closeMenuPage(); });
 
+let lastPickPool = 0;
 let editingVenue = null;
 function openForm(v){
   editingVenue = v || null;
