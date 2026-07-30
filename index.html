@@ -71,6 +71,21 @@
   .flag{font-size:12px;flex-shrink:0;margin-left:2px;}
   .flag.ok{color:var(--muted);}
   .flag.warn{color:var(--accent);}
+  .mp-row{display:flex;align-items:baseline;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+  .mp-row:last-child{border-bottom:none;}
+  .mp-cat{flex:0 0 36%;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;word-break:break-word;}
+  .mp-it{flex:1;font-size:14px;min-width:0;}
+  .mp-row button{background:none;border:none;color:var(--bad);font-size:17px;cursor:pointer;padding:0 4px;flex:none;line-height:1;}
+  .mp-head{display:flex;gap:10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--border);}
+  .mp-head span:first-child{flex:0 0 36%;}
+  .mp-head span:nth-child(2){flex:1;}
+  .sugwrap{position:relative;}
+  .suggest{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none;}
+  .suggest.open{display:block;}
+  .sug{padding:9px 12px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .sug:last-child{border-bottom:none;}
+  .sug.sel{background:var(--card2);}
+  .sug small{display:block;color:var(--muted);font-size:11px;margin-top:1px;}
   .mp-sec{margin-top:14px;}
   .mp-sec h4{margin:0 0 4px;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;}
   .mp-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;}
@@ -106,7 +121,10 @@
   <h1>Food + Drink (<span id="totalCount">0</span>) <button class="refresh" id="refreshBtn">refresh</button></h1>
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
-  <input class="search" id="searchBox" placeholder="Search name, category, location, notes...">
+  <div class="sugwrap">
+    <input class="search" id="searchBox" placeholder="Search name, category, location, notes..." autocomplete="off">
+    <div class="suggest" id="suggestBox"></div>
+  </div>
   <div class="row">
     <select id="categorySelect"><option value="">All categories</option></select>
     <div class="chip" data-rating="y">👍 y</div>
@@ -135,11 +153,12 @@
   <div class="sub" id="menuPageSub"></div>
   <div id="menuPageBody"></div>
   <div class="addline">
-    <input class="sec" id="mp_section" placeholder="Section">
-    <input id="mp_item" placeholder="Item ordered">
+    <input class="sec" id="mp_section" placeholder="Category" list="sectionList" autocomplete="off">
+    <input id="mp_item" placeholder="Item ordered" autocomplete="off">
     <button id="mp_add" type="button">Add</button>
   </div>
   <span class="bulklink" id="mp_bulk">add several at once</span>
+  <datalist id="sectionList"></datalist>
 </div>
 
 <div class="sheet" id="formSheet">
@@ -178,7 +197,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.28-3";
+const APP_VERSION = "2026.07.28-4";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -368,7 +387,59 @@ function render(){
   }
 }
 
-document.getElementById('searchBox').addEventListener('input', e => { state.query = e.target.value; state.shown=60; render(); });
+const suggestBox = document.getElementById('suggestBox');
+let sugItems = [], sugSel = -1;
+
+function hideSuggest(){ suggestBox.classList.remove('open'); suggestBox.innerHTML=''; sugItems=[]; sugSel=-1; }
+
+function showSuggest(q){
+  q = q.trim().toLowerCase();
+  if(q.length < 2){ hideSuggest(); return; }
+  const starts = [], contains = [];
+  for(const v of venues){
+    const n = (v.name||'').toLowerCase();
+    if(!n) continue;
+    if(n.startsWith(q)) starts.push(v);
+    else if(n.includes(q)) contains.push(v);
+    if(starts.length >= 8) break;
+  }
+  sugItems = starts.concat(contains).slice(0, 8);
+  if(!sugItems.length){ hideSuggest(); return; }
+  suggestBox.innerHTML = sugItems.map((v,i) => `<div class="sug" data-i="${i}">${escapeHtml(v.name)}<small>${escapeHtml([v.category, v.location].filter(Boolean).join(' \u00b7 '))}</small></div>`).join('');
+  suggestBox.querySelectorAll('.sug').forEach(el => {
+    el.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      const v = sugItems[parseInt(el.dataset.i,10)];
+      hideSuggest();
+      openDetail(v);
+    });
+  });
+  sugSel = -1;
+  suggestBox.classList.add('open');
+}
+
+document.getElementById('searchBox').addEventListener('input', e => {
+  state.query = e.target.value; state.shown=60; render();
+  showSuggest(e.target.value);
+});
+document.getElementById('searchBox').addEventListener('keydown', e => {
+  if(!sugItems.length) return;
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    e.preventDefault();
+    sugSel += (e.key === 'ArrowDown' ? 1 : -1);
+    if(sugSel < 0) sugSel = sugItems.length - 1;
+    if(sugSel >= sugItems.length) sugSel = 0;
+    suggestBox.querySelectorAll('.sug').forEach((el,i) => el.classList.toggle('sel', i === sugSel));
+  } else if(e.key === 'Enter'){
+    const v = sugSel >= 0 ? sugItems[sugSel] : sugItems[0];
+    hideSuggest();
+    e.target.blur();
+    openDetail(v);
+  } else if(e.key === 'Escape'){
+    hideSuggest();
+  }
+});
+document.getElementById('searchBox').addEventListener('blur', () => setTimeout(hideSuggest, 120));
 document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; render(); });
 document.querySelectorAll('.chip[data-rating]').forEach(chip => {
   chip.addEventListener('click', () => {
@@ -466,6 +537,7 @@ function openDetail(v){
       render();
     });
   });
+  hideSuggest();
   overlay.classList.add('open');
   detailSheet.classList.add('open');
 }
@@ -526,40 +598,67 @@ let menuPageVenue = null;
 function renderMenuPage(){
   const v = menuPageVenue;
   if(!v) return;
-  const eaten = menus[v.name] || {};
-  const secs = Object.keys(eaten).sort((a,b)=>a.localeCompare(b));
-  const count = Object.values(eaten).reduce((n,a)=>n+a.length,0);
+  // build flat rows straight from menuRows so each row keeps its real table index
+  const rows = menuRows
+    .filter(r => r.venue === v.name && r.item && r.item !== '(no items recorded)')
+    .map(r => ({ index: r.index, cat: r.section || 'Other', item: r.item }))
+    .sort((a,b) => a.cat.localeCompare(b.cat) || a.item.localeCompare(b.item));
+  const cats = new Set(rows.map(r => r.cat));
   document.getElementById('menuPageTitle').textContent = v.name;
-  document.getElementById('menuPageSub').textContent =
-    count ? count + ' item' + (count===1?'':'s') + ' ordered' : 'Nothing recorded yet';
+  document.getElementById('menuPageSub').textContent = rows.length
+    ? rows.length + ' item' + (rows.length===1?'':'s') + ' across ' + cats.size + ' categor' + (cats.size===1?'y':'ies')
+    : 'Nothing recorded yet';
   const body = document.getElementById('menuPageBody');
-  body.innerHTML = secs.map(sec => `
-    <div class="mp-sec">
-      <h4>${escapeHtml(sec)}</h4>
-      ${eaten[sec].map(item => `
-        <div class="mp-item">
-          <span>${escapeHtml(item)}</span>
-          <button type="button" data-sec="${escapeHtml(sec)}" data-item="${escapeHtml(item)}" title="remove">&times;</button>
-        </div>`).join('')}
-    </div>`).join('');
-  body.querySelectorAll('.mp-item button').forEach(btn => {
+  body.innerHTML = rows.length
+    ? '<div class="mp-head"><span>Category</span><span>Item</span><span style="width:22px;"></span></div>' +
+      rows.map(r => `<div class="mp-row" data-index="${r.index}">
+        <span class="mp-cat">${escapeHtml(r.cat)}</span>
+        <span class="mp-it">${escapeHtml(r.item)}</span>
+        <button type="button" title="remove">&times;</button>
+      </div>`).join('')
+    : '';
+  body.querySelectorAll('.mp-row button').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const sec = btn.dataset.sec, item = btn.dataset.item;
+      const rowEl = btn.closest('.mp-row');
+      const idx = parseInt(rowEl.dataset.index, 10);
+      const item = rowEl.querySelector('.mp-it').textContent;
       if(!confirm('Remove "' + item + '" from ' + v.name + '?')) return;
-      const row = menuRows.find(r => r.venue === v.name && (r.section||'Other') === sec && r.item === item);
-      if(!row) return;
       await withBusy(async () => {
-        await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${row.index})/delete`);
-        await loadAll(); populateCategories(); render(); renderMenuPage();
+        // re-read the table so the index is current, then match on content
+        await loadAll();
+        const live = menuRows.find(r => r.index === idx && r.venue === v.name && r.item === item)
+                  || menuRows.find(r => r.venue === v.name && r.item === item);
+        if(!live){ alert('That item is no longer in the sheet.'); render(); renderMenuPage(); return; }
+        await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${live.index})/delete`);
+        await loadAll();
+        // if nothing is left, clear the flag on tab 1
+        const stillHas = menuRows.some(r => r.venue === v.name && r.item);
+        const cur = venues.find(x => x.name === v.name);
+        if(cur && !stillHas && cur.hasMenuDetail === 'x'){
+          const rec = Object.assign({}, cur, { hasMenuDetail: '' });
+          delete rec.index;
+          await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+          await loadAll();
+        }
+        menuPageVenue = venues.find(x => x.name === v.name) || v;
+        populateCategories(); render(); refreshSectionList(); renderMenuPage();
       });
     });
   });
+}
+
+function refreshSectionList(){
+  const dl = document.getElementById('sectionList');
+  if(!dl) return;
+  const secs = Array.from(new Set(menuRows.map(r => r.section).filter(Boolean))).sort();
+  dl.innerHTML = secs.map(x => `<option value="${escapeHtml(x)}"></option>`).join('');
 }
 
 function openMenuPage(v){
   menuPageVenue = v;
   document.getElementById('mp_section').value = '';
   document.getElementById('mp_item').value = '';
+  refreshSectionList();
   renderMenuPage();
   overlay.classList.add('open');
   menuPageSheet.classList.add('open');
@@ -581,7 +680,7 @@ async function addOrderedItem(){
       delete rec.index;
       await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
     }
-    await loadAll(); populateCategories(); render();
+    await loadAll(); populateCategories(); render(); refreshSectionList();
     menuPageVenue = venues.find(x => x.name === v.name) || v;
     document.getElementById('mp_item').value = '';
     document.getElementById('mp_item').focus();
