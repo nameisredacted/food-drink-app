@@ -58,6 +58,7 @@
   .btn.primary{background:var(--accent);color:#1a1208;}
   .btn.ghost{background:var(--card2);color:var(--text);border:1px solid var(--border);}
   .btn.danger{background:rgba(224,98,95,.18);color:var(--bad);border:1px solid var(--bad);}
+  .back-link{background:none;border:none;color:var(--accent);font-size:14px;cursor:pointer;padding:0;margin-bottom:8px;display:inline-flex;align-items:center;gap:4px;}
   .close-x{position:absolute;top:14px;right:14px;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
   ::placeholder{color:var(--muted);}
   .gate{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;}
@@ -163,6 +164,7 @@
 
 <div class="sheet" id="menuPageSheet">
   <button class="close-x" id="closeMenuPage">&times;</button>
+  <button class="back-link" id="backToDetail">&lsaquo; back</button>
   <h2 id="menuPageTitle"></h2>
   <div class="sub" id="menuPageSub"></div>
   <div id="menuPageBody"></div>
@@ -198,7 +200,8 @@
 
 <div class="sheet" id="menuFormSheet">
   <button class="close-x" id="closeMenuForm">&times;</button>
-  <h2 id="menuFormTitle">Edit Menu</h2>
+  <button class="back-link" id="backToMenuPage">&lsaquo; back</button>
+  <h2 id="menuFormTitle">Log eaten</h2>
   <div class="sub">Writes directly to the Menu Details sheet in your Excel file.</div>
   <div id="menuRows"></div>
   <button class="addRowBtn" id="addMenuRowBtn" type="button">+ Add category</button>
@@ -210,7 +213,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.29-3";
+const APP_VERSION = "2026.07.29-4";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -785,6 +788,14 @@ function openMenuPage(v){
 }
 function closeMenuPage(){ overlay.classList.remove('open'); menuPageSheet.classList.remove('open'); menuPageVenue=null; }
 document.getElementById('closeMenuPage').addEventListener('click', closeMenuPage);
+document.getElementById('backToDetail').addEventListener('click', () => {
+  const v = menuPageVenue;
+  closeMenuPage();
+  if(!v) return;
+  const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
+             || venues.find(x => x.name === v.name) || v;
+  openDetail(fresh);
+});
 
 async function addOrderedItem(){
   const v = menuPageVenue;
@@ -846,6 +857,11 @@ function openMenuForm(v){
 function closeMenuForm(){ overlay.classList.remove('open'); menuFormSheet.classList.remove('open'); menuEditingVenue=null; }
 document.getElementById('addMenuRowBtn').addEventListener('click', () => addMenuRow('', ''));
 document.getElementById('closeMenuForm').addEventListener('click', closeMenuForm);
+document.getElementById('backToMenuPage').addEventListener('click', () => {
+  const v = menuEditingVenue;
+  closeMenuForm();
+  if(v) openMenuPage(v);
+});
 document.getElementById('cancelMenuForm').addEventListener('click', closeMenuForm);
 
 document.getElementById('saveMenuForm').addEventListener('click', async () => {
