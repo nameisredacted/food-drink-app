@@ -68,6 +68,11 @@
   .chip.dice{background:var(--accent);color:#1a1208;border-color:var(--accent);font-weight:600;}
   .chip.dice:active{opacity:.75;}
   .pickfrom{font-size:11px;color:var(--muted);margin-top:2px;}
+  .rateRow{display:flex;gap:6px;margin:2px 0 12px;}
+  .rateBtn{flex:1;padding:9px 0;text-align:center;border-radius:9px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-size:15px;cursor:pointer;}
+  .rateBtn.on.y{background:rgba(95,184,120,.22);border-color:var(--good);color:var(--good);}
+  .rateBtn.on.d{background:rgba(154,163,175,.22);border-color:var(--maybe);color:var(--text);}
+  .rateBtn.on.n{background:rgba(224,98,95,.22);border-color:var(--bad);color:var(--bad);}
   .flag{font-size:12px;flex-shrink:0;margin-left:2px;}
   .flag.ok{color:var(--muted);}
   .flag.warn{color:var(--accent);}
@@ -197,7 +202,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.28-4";
+const APP_VERSION = "2026.07.28-5";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -334,6 +339,14 @@ function matches(v){
     if(!hay.includes(q)) return false;
   }
   return true;
+}
+// Table row indexes shift whenever rows are added or removed, so always
+// re-read and re-match immediately before writing.
+async function resolveVenue(v){
+  await loadAll();
+  return venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
+      || venues.find(x => x.name === v.name)
+      || null;
 }
 function hasMenu(v){
   const m = menus[v.name];
@@ -486,7 +499,13 @@ function openDetail(v){
   document.getElementById('detailContent').innerHTML = `
     <h2>${escapeHtml(v.name||'')}</h2>
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
-    ${(v.rating||'').trim() ? `<div class="field"><label>Rating</label><div class="badge ${ratingBadgeClass(v.rating)}" style="display:inline-block;">${escapeHtml(v.rating.trim())}</div></div>` : ''}
+    <div class="field"><label>Rating</label>
+      <div class="rateRow">
+        <div class="rateBtn y ${(v.rating||'').trim()==='y'?'on':''}" data-r="y">\ud83d\udc4d</div>
+        <div class="rateBtn d ${(v.rating||'').trim()==='-'?'on':''}" data-r="-">\ud83e\udd14</div>
+        <div class="rateBtn n ${(v.rating||'').trim()==='n'?'on':''}" data-r="n">\ud83d\udc4e</div>
+      </div>
+    </div>
     ${wantHtml}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     ${v.address ? `<div class="field"><label>Address</label><div>${escapeHtml(v.address)}</div></div>` : ''}
@@ -510,12 +529,31 @@ function openDetail(v){
       await withBusy(async () => {
         await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
           { values: [[v.name, v.location||'', section.trim()||'Other', item]] });
-        const rec = Object.assign({}, v, { toOrder: remaining, hasMenuDetail: 'x' });
-        delete rec.index;
-        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
+        const cur = await resolveVenue(v);
+        if(cur){
+          const rec = Object.assign({}, cur, { toOrder: remaining, hasMenuDetail: 'x' });
+          delete rec.index;
+          await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+        }
         await loadAll(); populateCategories(); render();
         const fresh = venues.find(x => x.name === v.name) || v;
         openMenuPage(fresh);
+      });
+    });
+  });
+  document.querySelectorAll('#detailContent .rateBtn').forEach(el => {
+    el.addEventListener('click', async () => {
+      const want = el.dataset.r;
+      const next = (v.rating||'').trim() === want ? '' : want;   // tap again to clear
+      await withBusy(async () => {
+        const cur = await resolveVenue(v);
+        if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); return; }
+        const rec = Object.assign({}, cur, { rating: next });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+        await loadAll(); populateCategories(); render();
+        const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||'')) || venues.find(x => x.name === v.name);
+        if(fresh){ lastPickPool = lastPickPool; openDetail(fresh); }
       });
     });
   });
@@ -531,7 +569,9 @@ function openDetail(v){
     if(!confirm(`Delete "${v.name}" from your Excel file?`)) return;
     closeDetail();
     await withBusy(async () => {
-      await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})/delete`);
+      const cur = await resolveVenue(v);
+      if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); render(); return; }
+      await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})/delete`);
       await loadAll();
       populateCategories();
       render();
@@ -581,7 +621,9 @@ document.getElementById('saveForm').addEventListener('click', async () => {
   closeForm();
   await withBusy(async () => {
     if(editingVenue){
-      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${editingVenue.index})`, { values: [objToRow(rec)] });
+      const cur = await resolveVenue(editingVenue);
+      if(!cur){ alert('Could not find "' + editingVenue.name + '" in the sheet any more.'); return; }
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
     } else {
       await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
     }
@@ -676,9 +718,12 @@ async function addOrderedItem(){
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
       { values: [[v.name, v.location||'', sec, item]] });
     if(v.hasMenuDetail !== 'x'){
-      const rec = Object.assign({}, v, { hasMenuDetail: 'x' });
-      delete rec.index;
-      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
     }
     await loadAll(); populateCategories(); render(); refreshSectionList();
     menuPageVenue = venues.find(x => x.name === v.name) || v;
@@ -738,9 +783,12 @@ document.getElementById('saveMenuForm').addEventListener('click', async () => {
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
       { values: pairs.map(p => [v.name, v.location||'', p.section, p.item]) });
     if(v.hasMenuDetail !== 'x'){
-      const rec = Object.assign({}, v, { hasMenuDetail: 'x' });
-      delete rec.index;
-      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${v.index})`, { values: [objToRow(rec)] });
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
     }
     await loadAll(); populateCategories(); render();
     const fresh = venues.find(x => x.name === v.name) || v;
