@@ -74,7 +74,8 @@
   .chip.dice:active{opacity:.75;}
   .pickfrom{font-size:11px;color:var(--muted);margin-top:2px;}
   .rateRow{display:flex;gap:6px;margin:2px 0 12px;}
-  .rateBtn{flex:1;padding:9px 0;text-align:center;border-radius:9px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-size:15px;cursor:pointer;}
+  .rateBtn{flex:1;padding:9px 0;text-align:center;border-radius:9px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;}
+  .rateBtn.on{box-shadow:inset 0 0 0 1px currentColor;}
   .rateBtn.on.y{background:rgba(95,184,120,.22);border-color:var(--good);color:var(--good);}
   .rateBtn.on.d{background:rgba(154,163,175,.22);border-color:var(--maybe);color:var(--text);}
   .rateBtn.on.n{background:rgba(224,98,95,.22);border-color:var(--bad);color:var(--bad);}
@@ -209,7 +210,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.29-2";
+const APP_VERSION = "2026.07.29-3";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -553,9 +554,9 @@ function openDetail(v){
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
     <div class="field"><label>Rating</label>
       <div class="rateRow">
-        <div class="rateBtn y ${(v.rating||'').trim()==='y'?'on':''}" data-r="y">\ud83d\udc4d</div>
-        <div class="rateBtn d ${(v.rating||'').trim()==='-'?'on':''}" data-r="-">\ud83e\udd14</div>
-        <div class="rateBtn n ${(v.rating||'').trim()==='n'?'on':''}" data-r="n">\ud83d\udc4e</div>
+        <div class="rateBtn y ${(v.rating||'').trim()==='y'?'on':''}" data-r="y">y</div>
+        <div class="rateBtn d ${(v.rating||'').trim()==='-'?'on':''}" data-r="-">-</div>
+        <div class="rateBtn n ${(v.rating||'').trim()==='n'?'on':''}" data-r="n">n</div>
       </div>
     </div>
     ${wantHtml}
@@ -595,17 +596,41 @@ function openDetail(v){
   document.querySelectorAll('#detailContent .rateBtn').forEach(el => {
     el.addEventListener('click', async () => {
       const want = el.dataset.r;
-      const next = (v.rating||'').trim() === want ? '' : want;   // tap again to clear
-      await withBusy(async () => {
-        const cur = await resolveVenue(v);
-        if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); return; }
-        const rec = Object.assign({}, cur, { rating: next });
-        delete rec.index;
-        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
-        await loadAll(); populateCategories(); render();
-        const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||'')) || venues.find(x => x.name === v.name);
-        if(fresh){ lastPickPool = lastPickPool; openDetail(fresh); }
-      });
+      const prev = (v.rating||'').trim();
+      const next = prev === want ? '' : want;      // tapping the active one clears it
+
+      // show it immediately: button state, and the list behind the sheet
+      v.rating = next;
+      document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
+        b.classList.toggle('on', b.dataset.r === next));
+      render();
+
+      try{
+        const body = { values: [objToRow(Object.assign({}, v, { rating: next }))] };
+        const rowPath = i => `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${i})`;
+        try{
+          await graph('PATCH', rowPath(v.index), body);
+        }catch(e){
+          const cur = await resolveVenue(v);          // index moved - re-find and retry
+          if(!cur) throw new Error('row not found');
+          await graph('PATCH', rowPath(cur.index), body);
+        }
+        await loadAll();
+        const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
+                   || venues.find(x => x.name === v.name);
+        if(fresh){
+          v.index = fresh.index; v.rating = fresh.rating;
+          document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
+            b.classList.toggle('on', b.dataset.r === (fresh.rating||'').trim()));
+        }
+        populateCategories(); render();
+      }catch(err){
+        v.rating = prev;                             // roll the UI back
+        document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
+          b.classList.toggle('on', b.dataset.r === prev));
+        render();
+        alert('Could not save the rating: ' + err.message);
+      }
     });
   });
   const reroll = document.getElementById('rerollBtn');
