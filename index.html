@@ -17,14 +17,15 @@
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);}
   header{position:sticky;top:0;background:var(--bg);padding:12px 14px 8px;z-index:10;border-bottom:1px solid var(--border);}
   h1{font-size:18px;margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px;}
-  .searchrow{display:flex;gap:8px;align-items:center;}
-  .clearall{flex:none;padding:7px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-size:13px;cursor:pointer;}
-  .search{width:40%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;}
+  .searchrow{position:relative;}
+  .clearx{position:absolute;top:50%;right:8px;transform:translateY(-50%);background:none;border:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:2px 6px;}
+  .search{width:100%;padding-right:34px !important;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;}
   .row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;}
   select, .chip{font-size:13px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);}
   .chip{cursor:pointer;user-select:none;}
   .chip.active{background:var(--accent);color:#1a1208;border-color:var(--accent);}
   .count{font-size:12px;color:var(--muted);margin-top:6px;}
+  .hint-empty{color:var(--muted);font-size:14px;padding:18px 2px;}
   main{padding:10px 14px 90px;}
   .item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;}
   .item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
@@ -130,13 +131,12 @@
 </div>
 
 <header style="display:none;" id="appHeader">
-  <h1>Food + Drink (<span id="totalCount">0</span>) <button class="refresh" id="refreshBtn">refresh</button></h1>
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
     <div class="searchrow">
       <input class="search" id="searchBox" placeholder="Search..." autocomplete="off">
-      <button class="clearall" id="clearAllBtn" type="button">clear all</button>
+      <button class="clearx" id="clearAllBtn" type="button" title="clear all">&times;</button>
     </div>
     <div class="suggest" id="suggestBox"></div>
   </div>
@@ -212,7 +212,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.07.29-6";
+const APP_VERSION = "2026.07.29-7";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -404,14 +404,23 @@ function populateCategories(){
   cats.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
 }
 
+function isBrowsing(){
+  return !!(state.query.trim() || state.category || state.ratings.size || state.near);
+}
+
 function render(){
-  document.getElementById('totalCount').textContent = venues.length;
+  const list = document.getElementById('list');
+  if(!isBrowsing()){
+    list.innerHTML = '<div class="hint-empty">type to search, or pick a category</div>';
+    document.getElementById('resultCount').textContent = '';
+    document.getElementById('geoNote').style.display = 'none';
+    return;
+  }
   let filtered = venues.filter(matches);
   if(state.near){
     filtered = filtered.filter(v => distOf(v) !== null)
                        .sort((x,y) => distOf(x) - distOf(y));
   }
-  const list = document.getElementById('list');
   list.innerHTML = '';
   const toShow = filtered.slice(0, state.shown);
   document.getElementById('resultCount').textContent = filtered.length + ' result' + (filtered.length===1?'':'s');
@@ -681,7 +690,6 @@ function closeForm(){ overlay.classList.remove('open'); formSheet.classList.remo
 document.getElementById('addBtn').addEventListener('click', () => openForm(null));
 document.getElementById('closeForm').addEventListener('click', closeForm);
 document.getElementById('cancelForm').addEventListener('click', closeForm);
-document.getElementById('refreshBtn').addEventListener('click', () => withBusy(async () => { await loadAll(); populateCategories(); render(); }));
 
 document.getElementById('saveForm').addEventListener('click', async () => {
   const rec = {
@@ -769,9 +777,12 @@ function renderMenuPage(){
   });
 }
 
-// The dozen sections that actually recur across your menus.
-const SECTIONS = ['Appetizers','Cocktails','Coffee','Desserts','Dim Sum','Drinks',
-                  'Entrees','Mains','Salads','Sandwiches','Sides','Snacks'];
+// Canonical sections (cleaned 2026-08-08); stadium venues also use stand names.
+const SECTIONS = ['Appetizers','Mains','Sandwiches & Burgers','Pizza','Tacos & Antojitos',
+                  'Dim Sum & Dumplings','Noodles & Rice','Seafood','Salads','Soups',
+                  'Sides & Sauces','Snacks','Breakfast','Bagels','Bakery & Pastry','Desserts',
+                  'Coffee & Tea','Drinks','Cocktails','Beer','Wine','Spirits',
+                  'Specials & Happy Hour','Other'];
 
 // iOS-style inline completion: finishes the word in place and selects the
 // suggested remainder, so typing over it or pressing delete just discards it.
