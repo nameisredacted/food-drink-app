@@ -10,8 +10,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
 <style>
   :root{
-    --bg:#0f1115; --card:#1a1d24; --card2:#22262f; --text:#eceef1; --muted:#9aa3af;
-    --accent:#e0a458; --good:#5fb878; --bad:#e0625f; --maybe:#9aa3af; --border:#2a2e37;
+    --bg:#ffffff; --card:#ffffff; --card2:#f4f4f2; --text:#000000; --muted:#666666;
+    --accent:#0000cc; --good:#0a7a24; --bad:#cc0000; --maybe:#666666; --border:#cccccc;
   }
   *{box-sizing:border-box;}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);}
@@ -118,6 +118,28 @@
   .wantrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);}
   .wantrow:last-child{border-bottom:none;}
   .wantrow .ate{font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card2);color:var(--accent);cursor:pointer;}
+/* ===== craigslist skin (2026.08.09) ===== */
+body{font-family:Arial,Helvetica,sans-serif;}
+.search, select, .chip, .item, .more, .btn, .sheet, .field input, .field select,
+.field textarea, .field .locked, .fab{border-radius:0 !important;box-shadow:none !important;}
+.item{background:none;border:none;border-bottom:1px solid #e6e6e6;padding:8px 2px;margin-bottom:0;}
+.item-name{color:#0000cc;text-decoration:underline;font-weight:400;font-size:14px;}
+.item:visited .item-name{color:#551a8b;}
+.item-sub,.toorder{font-size:12px;}
+.badge{border-radius:0;font-weight:400;background:none !important;padding:2px 0;}
+.badge.y{color:var(--good);} .badge.n{color:var(--bad);} .badge.dash{color:var(--maybe);}
+.chip{background:#fff;border:1px solid #ccc;color:#0000cc;text-decoration:underline;}
+.chip.active{background:#0000cc;color:#fff;border-color:#0000cc;text-decoration:none;}
+.search{background:#fff;}
+.fab{background:#0000cc;color:#fff;width:auto;height:auto;padding:8px 14px;font-size:14px;border:1px solid #0000cc;}
+.btn.primary{background:#0000cc;color:#fff;}
+.btn.ghost{background:#fff;color:#0000cc;border:1px solid #ccc;text-decoration:underline;}
+.overlay{background:rgba(0,0,0,.25);}
+.sheet{border-top:2px solid #000;}
+.menu-group h4{color:#000;text-transform:none;letter-spacing:0;font-weight:bold;}
+.field .locked{background:#f4f4f2;color:#333;}
+.more{background:#fff;color:#0000cc;text-decoration:underline;border:1px solid #ccc;}
+h1{font-weight:700;font-size:16px;}
 </style>
 </head>
 <body>
@@ -212,7 +234,7 @@
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.08-1";
+const APP_VERSION = "2026.08.09-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
