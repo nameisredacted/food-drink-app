@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Food + Drink List</title>
+<title>eat + drink</title>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
 <style>
   :root{
@@ -128,12 +128,23 @@ body{font-family:Arial,Helvetica,sans-serif;}
 .item-sub,.toorder{font-size:12px;}
 .badge{border-radius:0;font-weight:400;background:none !important;padding:2px 0;}
 .badge.y{color:var(--good);} .badge.n{color:var(--bad);} .badge.dash{color:var(--maybe);}
-.chip{background:#fff;border:1px solid #ccc;color:#0000cc;text-decoration:underline;}
-.chip.active{background:#0000cc;color:#fff;border-color:#0000cc;text-decoration:none;}
+.chip{background:none;border:1px solid #ddd;color:#0000cc;text-decoration:none;}
+.chip.active{background:none;color:#551a8b;border-color:#999;font-weight:bold;}
+select{background:#fff;border:1px solid #ddd;}
 .search{background:#fff;}
-.fab{background:#0000cc;color:#fff;width:auto;height:auto;padding:8px 14px;font-size:14px;border:1px solid #0000cc;}
-.btn.primary{background:#0000cc;color:#fff;}
-.btn.ghost{background:#fff;color:#0000cc;border:1px solid #ccc;text-decoration:underline;}
+.fab{background:#fff;color:#0000cc;width:auto;height:auto;padding:6px 12px;font-size:16px;border:1px solid #ccc;}
+.btn.primary{background:#fff;color:#0000cc;border:1px solid #ccc;font-weight:400;}
+.btn.ghost{background:none;color:#0000cc;border:1px solid #ddd;text-decoration:none;}
+.more{background:none;text-decoration:none;}
+.chip.near, .chip.dice{background:none;color:#0000cc;border-color:#ddd;font-weight:400;}
+.chip.near.active, .chip.dice.active{color:#551a8b;border-color:#999;font-weight:bold;}
+.rateBtn{background:none;border-radius:0;font-weight:400;}
+.rateBtn.on.y{background:none;} .rateBtn.on.d{background:none;} .rateBtn.on.n{background:none;}
+.btn.danger{background:none;border-radius:0;}
+.ver{position:absolute;top:10px;right:14px;font-size:11px;color:#999;margin:0;}
+.ver a{color:#0000cc;}
+header{position:sticky;}
+h1{margin:0 0 8px;font-size:16px;font-weight:700;color:#000;}
 .overlay{background:rgba(0,0,0,.25);}
 .sheet{border-top:2px solid #000;}
 .menu-group h4{color:#000;text-transform:none;letter-spacing:0;font-weight:bold;}
@@ -146,13 +157,14 @@ h1{font-weight:700;font-size:16px;}
 
 <div class="gate" id="gate">
   <div id="gateInner">
-    <h2>Food + Drink</h2>
+    <h2>eat + drink</h2>
     <p>Sign in with the Microsoft account connected to your OneDrive to load your live list.</p>
     <button class="btn primary" id="signInBtn" style="flex:none;padding:12px 24px;">Sign in with Microsoft</button>
   </div>
 </div>
 
 <header style="display:none;" id="appHeader">
+  <h1>eat + drink</h1>
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
@@ -234,7 +246,7 @@ h1{font-weight:700;font-size:16px;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.09-1";
+const APP_VERSION = "2026.08.09-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -387,7 +399,7 @@ function fmtDist(d){
 }
 
 function matches(v){
-  if(state.category && v.category !== state.category) return false;
+  if(state.category && (v.category||'').trim().toLowerCase() !== state.category.trim().toLowerCase()) return false;
   if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
   if(state.query){
     const q = state.query.toLowerCase();
@@ -422,7 +434,13 @@ function escapeHtml(s){
 function populateCategories(){
   const sel = document.getElementById('categorySelect');
   sel.innerHTML = '<option value="">All categories</option>';
-  const cats = Array.from(new Set(venues.map(v=>v.category).filter(Boolean))).sort();
+  const byLower = {};
+  venues.map(v=>(v.category||'').trim()).filter(Boolean).forEach(c => {
+    const k=c.toLowerCase(); (byLower[k]=byLower[k]||{})[c]=(byLower[k][c]||0)+1;
+  });
+  const cats = Object.values(byLower)
+    .map(variants => Object.entries(variants).sort((a,b)=>b[1]-a[1])[0][0])
+    .sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
   cats.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
 }
 
@@ -1040,7 +1058,7 @@ async function init(){
 
 function showSignInButton(){
   document.getElementById('gateInner').innerHTML = `
-    <h2>Food + Drink</h2>
+    <h2>eat + drink</h2>
     <p>Sign in with the Microsoft account connected to your OneDrive to load your live list.</p>
     <button class="btn primary" id="signInBtn" style="flex:none;padding:12px 24px;">Sign in with Microsoft</button>
   `;
@@ -1056,7 +1074,7 @@ function showLoading(){
 }
 function showGateError(msg){
   document.getElementById('gateInner').innerHTML = `
-    <h2>Food + Drink</h2>
+    <h2>eat + drink</h2>
     <p>Something went wrong.</p>
     <div class="errbox">${escapeHtml(msg)}</div>
     <button class="btn primary" id="retryBtn" style="flex:none;padding:12px 24px;margin-top:14px;">Try again</button>
