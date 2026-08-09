@@ -118,39 +118,75 @@
   .wantrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);}
   .wantrow:last-child{border-bottom:none;}
   .wantrow .ate{font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card2);color:var(--accent);cursor:pointer;}
-/* ===== craigslist skin (2026.08.09) ===== */
-body{font-family:Arial,Helvetica,sans-serif;}
+/* ===== minimal (2026.08.09) =====
+   One family, one accent, hairlines only. Color carries meaning
+   (blue = tappable, green/red = verdict); everything else is type. */
+:root{ --accent:#1a4fd6; --hair:#ececec; }
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+     -webkit-font-smoothing:antialiased;font-size:15px;color:#111;}
 .search, select, .chip, .item, .more, .btn, .sheet, .field input, .field select,
-.field textarea, .field .locked, .fab{border-radius:0 !important;box-shadow:none !important;}
-.item{background:none;border:none;border-bottom:1px solid #e6e6e6;padding:8px 2px;margin-bottom:0;}
-.item-name{color:#0000cc;text-decoration:underline;font-weight:400;font-size:14px;}
-.item:visited .item-name{color:#551a8b;}
-.item-sub,.toorder{font-size:12px;}
-.badge{border-radius:0;font-weight:400;background:none !important;padding:2px 0;}
-.badge.y{color:var(--good);} .badge.n{color:var(--bad);} .badge.dash{color:var(--maybe);}
-.chip{background:none;border:1px solid #ddd;color:#0000cc;text-decoration:none;}
-.chip.active{background:none;color:#551a8b;border-color:#999;font-weight:bold;}
-select{background:#fff;border:1px solid #ddd;}
-.search{background:#fff;}
-.fab{background:#fff;color:#0000cc;width:auto;height:auto;padding:6px 12px;font-size:16px;border:1px solid #ccc;}
-.btn.primary{background:#fff;color:#0000cc;border:1px solid #ccc;font-weight:400;}
-.btn.ghost{background:none;color:#0000cc;border:1px solid #ddd;text-decoration:none;}
-.more{background:none;text-decoration:none;}
-.chip.near, .chip.dice{background:none;color:#0000cc;border-color:#ddd;font-weight:400;}
-.chip.near.active, .chip.dice.active{color:#551a8b;border-color:#999;font-weight:bold;}
-.rateBtn{background:none;border-radius:0;font-weight:400;}
-.rateBtn.on.y{background:none;} .rateBtn.on.d{background:none;} .rateBtn.on.n{background:none;}
-.btn.danger{background:none;border-radius:0;}
-.ver{position:absolute;top:10px;right:14px;font-size:11px;color:#999;margin:0;}
-.ver a{color:#0000cc;}
-header{position:sticky;}
-h1{margin:0 0 8px;font-size:16px;font-weight:700;color:#000;}
-.overlay{background:rgba(0,0,0,.25);}
-.sheet{border-top:2px solid #000;}
-.menu-group h4{color:#000;text-transform:none;letter-spacing:0;font-weight:bold;}
-.field .locked{background:#f4f4f2;color:#333;}
-.more{background:#fff;color:#0000cc;text-decoration:underline;border:1px solid #ccc;}
-h1{font-weight:700;font-size:16px;}
+.field textarea, .field .locked, .fab, .rateBtn{border-radius:0 !important;box-shadow:none !important;}
+
+/* header */
+header{position:sticky;border-bottom:1px solid var(--hair);padding:14px 16px 10px;}
+h1{margin:0 0 10px;font-size:15px;font-weight:700;letter-spacing:.01em;color:#111;}
+.loglink{font-weight:400;font-size:13px;color:var(--accent);cursor:pointer;margin-left:10px;}
+.ver{position:absolute;top:12px;right:16px;font-size:10px;color:#bbb;margin:0;letter-spacing:.02em;}
+.ver a{color:var(--accent);text-decoration:none;}
+.search{background:#fff;border:none;border-bottom:1px solid #ddd;padding:8px 30px 8px 0;font-size:16px;}
+.search:focus{outline:none;border-bottom-color:#111;}
+.clearx{right:0;color:#bbb;}
+
+/* filters: quiet text, black when on */
+select{background:#fff;border:none;color:var(--accent);padding:6px 2px;font-size:13px;-webkit-appearance:none;appearance:none;}
+.chip{background:none;border:none;color:var(--accent);padding:6px 8px;font-size:13px;}
+.chip.active{color:#111;font-weight:700;}
+.chip.near, .chip.dice{background:none;border:none;color:var(--accent);font-weight:400;}
+.chip.near.active, .chip.dice.active{color:#111;font-weight:700;}
+.count{color:#aaa;font-size:12px;}
+
+/* list: type does the work */
+main{padding:2px 16px 90px;}
+.item{background:none;border:none;border-bottom:1px solid var(--hair);padding:11px 0;margin:0;}
+.item-name{color:var(--accent);font-weight:400;font-size:15px;}
+.item-sub{font-size:12px;color:#999;margin-top:2px;}
+.badge{background:none !important;border-radius:0;font-weight:600;font-size:12px;padding:2px 0;}
+.badge.y{color:var(--good);} .badge.n{color:var(--bad);} .badge.dash{color:#c0c0c0;}
+.more{background:none;border:none;color:var(--accent);text-decoration:none;padding:14px;}
+
+/* the one floating action */
+.fab{background:#fff;color:var(--accent);width:auto;height:auto;padding:8px 14px;
+     font-size:14px;border:1px solid #ddd;}
+
+/* sheets */
+.overlay{background:rgba(0,0,0,.18);}
+.sheet{border-top:1px solid #ddd;}
+.sheet h2{font-size:17px;font-weight:700;}
+.btn{font-weight:400;}
+.btn.primary{background:#111;color:#fff;border:1px solid #111;}
+.btn.ghost{background:none;color:var(--accent);border:1px solid var(--hair);}
+.btn.danger{background:none;color:var(--bad);border:1px solid var(--hair);}
+.rateBtn{background:none;border:1px solid var(--hair);color:#bbb;font-weight:400;}
+.rateBtn.on{font-weight:700;box-shadow:none;}
+.rateBtn.on.y{background:none;border-color:var(--good);}
+.rateBtn.on.d{background:none;border-color:#999;color:#555;}
+.rateBtn.on.n{background:none;border-color:var(--bad);}
+.field .locked{background:#fafafa;color:#666;border-color:var(--hair);}
+.field input, .field select, .field textarea{background:#fff;border:1px solid #ddd;}
+.menu-group h4{color:#111;text-transform:none;letter-spacing:0;font-weight:700;}
+
+/* ordered/log page: vendor > category > item */
+.mp-vend{font-weight:700;font-size:13px;color:#111;margin:14px 0 2px;}
+.mp-cat{color:#999;text-transform:none;letter-spacing:0;font-size:12px;}
+.mp-row{border-bottom:1px solid var(--hair);cursor:pointer;}
+.log-venue{color:#999;font-size:12px;}
+#mp_cancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
+.addline{flex-wrap:wrap;border-top-color:var(--hair);}
+.addline input{background:#fff;border:1px solid #ddd;border-radius:0;}
+.addline input.sec{flex:1 1 38%;}
+.addline #mp_item{flex:1 1 100%;}
+.addline button{background:#fff;color:var(--accent);border:1px solid #ddd;border-radius:0;font-weight:400;}
+.bulklink{color:var(--accent);text-decoration:none;}
 </style>
 </head>
 <body>
@@ -164,7 +200,7 @@ h1{font-weight:700;font-size:16px;}
 </div>
 
 <header style="display:none;" id="appHeader">
-  <h1>eat + drink</h1>
+  <h1>eat + drink <a class="loglink" id="logLink">log</a></h1>
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
@@ -203,11 +239,21 @@ h1{font-weight:700;font-size:16px;}
   <div class="sub" id="menuPageSub"></div>
   <div id="menuPageBody"></div>
   <div class="addline">
+    <input class="sec" id="mp_vendor" placeholder="Vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
     <input class="sec" id="mp_section" placeholder="Category" autocomplete="off" autocapitalize="words" spellcheck="false">
     <input id="mp_item" placeholder="Item ordered" autocomplete="off">
-    <button id="mp_add" type="button">Add</button>
+    <button id="mp_add" type="button">add</button>
+    <button id="mp_cancel" type="button" style="display:none;">cancel</button>
   </div>
   <span class="bulklink" id="mp_bulk">add several at once</span>
+</div>
+
+<div class="sheet" id="logSheet">
+  <button class="close-x" id="closeLog">&times;</button>
+  <h2>log</h2>
+  <div class="sub" id="logSub"></div>
+  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search the log..." autocomplete="off"></div>
+  <div id="logBody"></div>
 </div>
 
 <div class="sheet" id="formSheet">
@@ -246,7 +292,7 @@ h1{font-weight:700;font-size:16px;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.09-2";
+const APP_VERSION = "2026.08.09-3";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -345,7 +391,7 @@ async function loadAll(){
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
 
   // Menu Details is a flat log of what has already been ordered / eaten:
-  // Venue | Location | Section | Item
+  // Venue | Location | Vendor | Section | Item
   try{
     let mrows = [];
     let mnext = `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`;
@@ -360,14 +406,15 @@ async function loadAll(){
         index: r.index !== undefined ? r.index : i,
         venue:   v[0]!=null ? String(v[0]) : '',
         location:v[1]!=null ? String(v[1]) : '',
-        section: v[2]!=null ? String(v[2]) : '',
-        item:    v[3]!=null ? String(v[3]) : ''
+        vendor:  v[2]!=null ? String(v[2]) : '',
+        section: v[3]!=null ? String(v[3]) : '',
+        item:    v[4]!=null ? String(v[4]) : ''
       };
     }).filter(r => r.venue);
     menus = {};
     menuRows.forEach(r => {
       if(!menus[r.venue]) menus[r.venue] = {};
-      const sec = r.section || 'Other';
+      const sec = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
       if(!menus[r.venue][sec]) menus[r.venue][sec] = [];
       if(r.item) menus[r.venue][sec].push(r.item);
     });
@@ -613,7 +660,7 @@ function openDetail(v){
     ${wantHtml}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     <div class="btnrow" style="margin-top:4px;">
-      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `Ordered (${itemCount})` : 'Ordered'}</button>
+      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `log (${itemCount})` : 'log'}</button>
       ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">again (${lastPickPool})</button>` : ''}
     </div>
     <div class="btnrow">
@@ -631,7 +678,7 @@ function openDetail(v){
       closeDetail();
       await withBusy(async () => {
         await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-          { values: [[v.name, v.location||'', section.trim()||'Other', item]] });
+          { values: [[v.name, v.location||'', '', section.trim()||'Other', item]] });
         const cur = await resolveVenue(v);
         if(cur){
           const rec = Object.assign({}, cur, { toOrder: remaining, hasMenuDetail: 'x' });
@@ -771,22 +818,47 @@ function renderMenuPage(){
   // build flat rows straight from menuRows so each row keeps its real table index
   const rows = menuRows
     .filter(r => r.venue === v.name && r.item && r.item !== '(no items recorded)')
-    .map(r => ({ index: r.index, cat: r.section || 'Other', item: r.item }))
-    .sort((a,b) => a.cat.localeCompare(b.cat) || a.item.localeCompare(b.item));
-  const cats = new Set(rows.map(r => r.cat));
+    .map(r => ({ index: r.index, vendor: r.vendor || '', cat: r.section || (r.vendor ? '' : 'Other'), item: r.item }))
+    .sort((a,b) => a.vendor.localeCompare(b.vendor) || a.cat.localeCompare(b.cat) || a.item.localeCompare(b.item));
+  const cats = new Set(rows.map(r => r.vendor + '|' + r.cat));
   document.getElementById('menuPageTitle').textContent = v.name;
   document.getElementById('menuPageSub').textContent = rows.length
-    ? rows.length + ' item' + (rows.length===1?'':'s') + ' across ' + cats.size + ' categor' + (cats.size===1?'y':'ies')
+    ? rows.length + ' item' + (rows.length===1?'':'s')
     : 'Nothing recorded yet';
   const body = document.getElementById('menuPageBody');
-  body.innerHTML = rows.length
-    ? '<div class="mp-head"><span>Category</span><span>Item</span><span style="width:22px;"></span></div>' +
-      rows.map(r => `<div class="mp-row" data-index="${r.index}">
+  let html = '';
+  if(rows.length){
+    html += '<div class="mp-head"><span>Category</span><span>Item</span><span style="width:22px;"></span></div>';
+    let lastVendor = null;
+    rows.forEach(r => {
+      if(r.vendor !== lastVendor){
+        if(r.vendor) html += `<div class="mp-vend">${escapeHtml(r.vendor)}</div>`;
+        lastVendor = r.vendor;
+      }
+      html += `<div class="mp-row" data-index="${r.index}">
         <span class="mp-cat">${escapeHtml(r.cat)}</span>
         <span class="mp-it">${escapeHtml(r.item)}</span>
         <button type="button" title="remove">&times;</button>
-      </div>`).join('')
-    : '';
+      </div>`;
+    });
+  }
+  body.innerHTML = html;
+  // tap a row (not the x) to load it into the inputs for editing
+  body.querySelectorAll('.mp-row').forEach(rowEl => {
+    rowEl.addEventListener('click', e => {
+      if(e.target.tagName === 'BUTTON') return;
+      const idx = parseInt(rowEl.dataset.index, 10);
+      const live = menuRows.find(r => r.index === idx && r.venue === v.name);
+      if(!live) return;
+      editingLogRow = { venue: live.venue, vendor: live.vendor, section: live.section, item: live.item };
+      document.getElementById('mp_vendor').value = live.vendor;
+      document.getElementById('mp_section').value = live.section;
+      document.getElementById('mp_item').value = live.item;
+      document.getElementById('mp_add').textContent = 'save';
+      document.getElementById('mp_cancel').style.display = '';
+      document.getElementById('mp_item').focus();
+    });
+  });
   body.querySelectorAll('.mp-row button').forEach(btn => {
     btn.addEventListener('click', async () => {
       const rowEl = btn.closest('.mp-row');
@@ -853,8 +925,7 @@ function refreshSectionList(){
 
 function openMenuPage(v){
   menuPageVenue = v;
-  document.getElementById('mp_section').value = '';
-  document.getElementById('mp_item').value = '';
+  resetLogInputs();
   refreshSectionList();
   renderMenuPage();
   overlay.classList.add('open');
@@ -871,16 +942,40 @@ document.getElementById('backToDetail').addEventListener('click', () => {
   openDetail(fresh);
 });
 
+let editingLogRow = null;
+function resetLogInputs(){
+  editingLogRow = null;
+  document.getElementById('mp_vendor').value = '';
+  document.getElementById('mp_section').value = '';
+  document.getElementById('mp_item').value = '';
+  document.getElementById('mp_add').textContent = 'add';
+  document.getElementById('mp_cancel').style.display = 'none';
+}
 async function addOrderedItem(){
   const v = menuPageVenue;
   if(!v) return;
   // any text is accepted - the shortlist is only a typing shortcut
-  const sec = document.getElementById('mp_section').value.trim() || 'Other';
+  const vendor = document.getElementById('mp_vendor').value.trim();
+  const sec = document.getElementById('mp_section').value.trim() || (vendor ? '' : 'Other');
   const item = document.getElementById('mp_item').value.trim();
   if(!item){ alert('Enter an item.'); return; }
+  if(editingLogRow){
+    const old = editingLogRow;
+    await withBusy(async () => {
+      await loadAll();
+      const live = menuRows.find(r => r.venue === old.venue && r.vendor === old.vendor && r.section === old.section && r.item === old.item);
+      if(!live){ alert('That row is no longer in the sheet.'); resetLogInputs(); renderMenuPage(); return; }
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${live.index})`,
+        { values: [[v.name, v.location||'', vendor, sec, item]] });
+      await loadAll(); render();
+      resetLogInputs();
+      renderMenuPage();
+    });
+    return;
+  }
   await withBusy(async () => {
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-      { values: [[v.name, v.location||'', sec, item]] });
+      { values: [[v.name, v.location||'', vendor, sec, item]] });
     if(v.hasMenuDetail !== 'x'){
       const cur = await resolveVenue(v);
       if(cur && cur.hasMenuDetail !== 'x'){
@@ -897,12 +992,41 @@ async function addOrderedItem(){
   });
 }
 document.getElementById('mp_add').addEventListener('click', addOrderedItem);
+document.getElementById('mp_cancel').addEventListener('click', resetLogInputs);
 document.getElementById('mp_item').addEventListener('keydown', e => { if(e.key==='Enter') addOrderedItem(); });
 document.getElementById('mp_bulk').addEventListener('click', () => {
   const v = menuPageVenue;
   closeMenuPage();
   openMenuForm(v);
 });
+
+/* ====== Global log: everything ever ordered, searchable ====== */
+const logSheet = document.getElementById('logSheet');
+function renderLog(){
+  const q = document.getElementById('logSearch').value.trim().toLowerCase();
+  let rows = menuRows.filter(r => r.item && r.item !== '(no items recorded)');
+  if(q) rows = rows.filter(r => (r.venue+' '+r.vendor+' '+r.section+' '+r.item).toLowerCase().includes(q));
+  rows = rows.slice().sort((a,b) => a.venue.localeCompare(b.venue) || a.vendor.localeCompare(b.vendor) || a.section.localeCompare(b.section) || a.item.localeCompare(b.item));
+  document.getElementById('logSub').textContent = rows.length + ' item' + (rows.length===1?'':'s');
+  document.getElementById('logBody').innerHTML = rows.slice(0,400).map(r => `
+    <div class="mp-row logrow" data-venue="${escapeHtml(r.venue)}">
+      <span class="mp-cat">${escapeHtml([r.vendor,r.section].filter(Boolean).join(' — ') || 'Other')}</span>
+      <span class="mp-it">${escapeHtml(r.item)}<span class="log-venue"> — ${escapeHtml(r.venue)}</span></span>
+    </div>`).join('') + (rows.length>400 ? '<div class="hint-empty">refine the search to see the rest</div>' : '');
+  document.querySelectorAll('#logBody .logrow').forEach(el => {
+    el.addEventListener('click', () => {
+      const name = el.dataset.venue;
+      const v = venues.find(x => x.name === name);
+      closeLog();
+      if(v) openMenuPage(v);
+    });
+  });
+}
+function openLog(){ document.getElementById('logSearch').value=''; renderLog(); overlay.classList.add('open'); logSheet.classList.add('open'); }
+function closeLog(){ overlay.classList.remove('open'); logSheet.classList.remove('open'); }
+document.getElementById('logLink').addEventListener('click', openLog);
+document.getElementById('closeLog').addEventListener('click', closeLog);
+document.getElementById('logSearch').addEventListener('input', renderLog);
 
 /* ====== Menu edit form ====== */
 let menuEditingVenue = null;
@@ -951,7 +1075,7 @@ document.getElementById('saveMenuForm').addEventListener('click', async () => {
   closeMenuForm();
   await withBusy(async () => {
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-      { values: pairs.map(p => [v.name, v.location||'', p.section, p.item]) });
+      { values: pairs.map(p => [v.name, v.location||'', '', p.section, p.item]) });
     if(v.hasMenuDetail !== 'x'){
       const cur = await resolveVenue(v);
       if(cur && cur.hasMenuDetail !== 'x'){
