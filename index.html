@@ -99,11 +99,11 @@
   .mp-item button{background:none;border:none;color:var(--bad);font-size:16px;cursor:pointer;padding:2px 6px;flex:none;}
   .addline{display:flex;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
   .addline input{flex:1;min-width:0;padding:10px 11px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;}
-  .addline input.sec{flex:0 0 34%;}
   .addline button{flex:none;padding:9px 14px;border-radius:8px;border:none;background:var(--accent);color:#1a1208;font-weight:600;font-size:14px;cursor:pointer;}
   .bulklink{display:block;margin-top:10px;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;}
   .refresh{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;margin-left:auto;}
   .menurow{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .menurow input{min-width:0;}
   .menurow input.mkey{flex:0 0 38%;}
   .menurow input.mval{flex:1;}
   .menurow button.rm{flex:none;background:none;border:none;color:var(--bad);font-size:18px;cursor:pointer;padding:4px 6px;}
@@ -174,11 +174,9 @@ main{padding:2px 16px 90px;}
 .mp-row{border-bottom:1px solid var(--hair);cursor:pointer;}
 .log-venue{color:#999;font-size:12px;}
 .log-head{font-weight:700;font-size:14px;color:#111;margin:16px 0 2px;cursor:pointer;}
-#mp_cancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
 .addline{flex-wrap:wrap;border-top-color:var(--hair);}
 .addline input{background:#fff;border:1px solid #ddd;border-radius:0;}
 .addline input.sec{flex:1 1 38%;}
-.addline #mp_item{flex:1 1 100%;}
 .addline button{background:#fff;color:var(--accent);border:1px solid #ddd;border-radius:0;font-weight:400;}
 .bulklink{color:var(--accent);text-decoration:none;}
 
@@ -194,8 +192,6 @@ main{padding:2px 16px 90px;}
 .ac-opt:last-child{border-bottom:none;}
 .ac-opt.sel{background:#f4f4f2;}
 .ac-opt small{color:#999;font-size:11px;margin-left:6px;}
-.addline .ac-wrap{flex:1 1 38%;min-width:0;}
-.menurow .ac-wrap{flex:0 0 38%;min-width:0;}
 .quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
 .quick button{background:none;border:1px solid var(--hair);color:var(--accent);
               font-size:12px;padding:4px 9px;cursor:pointer;border-radius:0;}
@@ -257,14 +253,7 @@ select.on{color:#111;font-weight:700;}
   <h2 id="menuPageTitle"></h2>
   <div class="sub" id="menuPageSub"></div>
   <div id="menuPageBody"></div>
-  <div class="addline">
-    <input class="sec" id="mp_vendor" placeholder="Vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
-    <input class="sec" id="mp_section" placeholder="Category" autocomplete="off" autocapitalize="words" spellcheck="false">
-    <input id="mp_item" placeholder="Item ordered" autocomplete="off">
-    <button id="mp_add" type="button">add</button>
-    <button id="mp_cancel" type="button" style="display:none;">cancel</button>
-  </div>
-  <span class="bulklink" id="mp_bulk">add several at once</span>
+  <button class="addRowBtn" id="mp_bulk" type="button" style="margin-top:14px;">+ add items</button>
 </div>
 
 <div class="sheet" id="logSheet">
@@ -273,8 +262,8 @@ select.on{color:#111;font-weight:700;}
   <div class="sub" id="logSub"></div>
   <div class="searchrow"><input class="search" id="logSearch" placeholder="Search everything ordered..." autocomplete="off"></div>
   <div class="addline">
-    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="Place" autocomplete="off" autocorrect="off" spellcheck="false"></div>
-    <div class="ac-wrap"><input class="sec" id="lg_section" placeholder="Category" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <input class="sec" id="lg_venue" placeholder="Place" autocomplete="off" autocorrect="off" spellcheck="false">
+    <input class="sec" id="lg_section" placeholder="Category" autocomplete="off" autocorrect="off" spellcheck="false">
     <input id="lg_item" placeholder="Item ordered" autocomplete="off">
     <button id="lg_add" type="button">add</button>
   </div>
@@ -313,6 +302,11 @@ select.on{color:#111;font-weight:700;}
   <button class="back-link" id="backToMenuPage">&lsaquo; back</button>
   <h2 id="menuFormTitle">Log eaten</h2>
   <div class="sub">Writes directly to the Menu Details sheet in your Excel file.</div>
+  <div class="field" id="mf_vendorField" style="display:none;">
+    <label>Vendor</label>
+    <input id="mf_vendor" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="which stand or stall">
+  </div>
+  <span class="bulklink" id="mf_vendorLink" style="display:none;margin-bottom:10px;">+ vendor</span>
   <div id="menuRows"></div>
   <button class="addRowBtn" id="addMenuRowBtn" type="button">+ Add category</button>
   <div class="btnrow">
@@ -323,7 +317,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.15-3";
+const APP_VERSION = "2026.08.15-4";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -894,20 +888,15 @@ function renderMenuPage(){
     });
   }
   body.innerHTML = html;
-  // tap a row (not the x) to load it into the inputs for editing
+  // tap a row (not the x) to edit it on its own page
   body.querySelectorAll('.mp-row').forEach(rowEl => {
     rowEl.addEventListener('click', e => {
       if(e.target.tagName === 'BUTTON') return;
       const idx = parseInt(rowEl.dataset.index, 10);
       const live = menuRows.find(r => r.index === idx && r.venue === v.name);
       if(!live) return;
-      editingLogRow = { venue: live.venue, vendor: live.vendor, section: live.section, item: live.item };
-      document.getElementById('mp_vendor').value = live.vendor;
-      document.getElementById('mp_section').value = live.section;
-      document.getElementById('mp_item').value = live.item;
-      document.getElementById('mp_add').textContent = 'save';
-      document.getElementById('mp_cancel').style.display = '';
-      document.getElementById('mp_item').focus();
+      closeMenuPage();
+      openMenuForm(v, live);
     });
   });
   body.querySelectorAll('.mp-row button').forEach(btn => {
@@ -934,7 +923,7 @@ function renderMenuPage(){
           await loadAll();
         }
         menuPageVenue = venues.find(x => x.name === v.name) || v;
-        populateCategories(); render(); refreshSectionList(); renderMenuPage();
+        populateCategories(); render(); renderMenuPage();
       });
     });
   });
@@ -973,6 +962,29 @@ function attachAutocomplete(input, getOptions, opts){
   if(!input || input._ac) return;
   input._ac = true;
   opts = opts || {};
+  // inlineOnly: complete in the field, never open a list over the page
+  if(opts.inlineOnly){
+    let skipI = false;
+    input.addEventListener('keydown', e => {
+      if(e.key === 'Backspace' || e.key === 'Delete'){ skipI = true; return; }
+      if(e.key === 'Tab' || e.key === 'ArrowRight' || e.key === 'Enter'){
+        const a = input.selectionStart, b = input.selectionEnd;
+        if(b > a){ input.setSelectionRange(b, b); if(e.key !== 'Enter') e.preventDefault(); }
+      }
+    });
+    input.addEventListener('input', () => {
+      const wasSkip = skipI; skipI = false;
+      const val = input.value;
+      if(wasSkip || !val) return;
+      if(input.selectionStart !== val.length) return;
+      const hit = (getOptions() || []).find(o =>
+        o.toLowerCase().startsWith(val.toLowerCase()) && o.length > val.length);
+      if(!hit) return;
+      input.value = hit;
+      try{ input.setSelectionRange(val.length, hit.length); }catch(err){}
+    });
+    return;
+  }
   let wrap = input.parentNode;
   if(!wrap || !wrap.classList.contains('ac-wrap')){
     const w = document.createElement('div');
@@ -1081,9 +1093,15 @@ function sectionOptions(){
   return out;
 }
 
-function refreshSectionList(){
-  attachAutocomplete(document.getElementById('mp_section'), sectionOptions);
-  attachAutocomplete(document.getElementById('mp_vendor'), vendorOptions);
+/* Vendors are a stadium / food-hall idea, not a restaurant one: a normal venue
+   has no vendors recorded and should never be asked for one. A venue that
+   already has any vendor on file gets the field automatically; anywhere else
+   it stays behind a "+ vendor" link. */
+function venueVendors(name){
+  return distinctValues(r => r.vendor, menuRows.filter(r => r.venue === name)).map(x => x.label);
+}
+function isMultiVendorVenue(name){
+  return venueVendors(name).length > 0;
 }
 
 /* tap-to-fill shortcuts under the Add/Edit fields */
@@ -1103,8 +1121,6 @@ function fillQuick(wrapId, input, options){
 
 function openMenuPage(v){
   menuPageVenue = v;
-  resetLogInputs();
-  refreshSectionList();
   renderMenuPage();
   overlay.classList.add('open');
   menuPageSheet.classList.add('open');
@@ -1120,58 +1136,6 @@ document.getElementById('backToDetail').addEventListener('click', () => {
   openDetail(fresh);
 });
 
-let editingLogRow = null;
-function resetLogInputs(){
-  editingLogRow = null;
-  document.getElementById('mp_vendor').value = '';
-  document.getElementById('mp_section').value = '';
-  document.getElementById('mp_item').value = '';
-  document.getElementById('mp_add').textContent = 'add';
-  document.getElementById('mp_cancel').style.display = 'none';
-}
-async function addOrderedItem(){
-  const v = menuPageVenue;
-  if(!v) return;
-  // any text is accepted - the shortlist is only a typing shortcut
-  const vendor = document.getElementById('mp_vendor').value.trim();
-  const sec = document.getElementById('mp_section').value.trim() || (vendor ? '' : 'Other');
-  const item = document.getElementById('mp_item').value.trim();
-  if(!item){ alert('Enter an item.'); return; }
-  if(editingLogRow){
-    const old = editingLogRow;
-    await withBusy(async () => {
-      await loadAll();
-      const live = menuRows.find(r => r.venue === old.venue && r.vendor === old.vendor && r.section === old.section && r.item === old.item);
-      if(!live){ alert('That row is no longer in the sheet.'); resetLogInputs(); renderMenuPage(); return; }
-      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${live.index})`,
-        { values: [[v.name, v.location||'', vendor, sec, item]] });
-      await loadAll(); render();
-      resetLogInputs();
-      renderMenuPage();
-    });
-    return;
-  }
-  await withBusy(async () => {
-    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-      { values: [[v.name, v.location||'', vendor, sec, item]] });
-    if(v.hasMenuDetail !== 'x'){
-      const cur = await resolveVenue(v);
-      if(cur && cur.hasMenuDetail !== 'x'){
-        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
-        delete rec.index;
-        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
-      }
-    }
-    await loadAll(); populateCategories(); render(); refreshSectionList();
-    menuPageVenue = venues.find(x => x.name === v.name) || v;
-    document.getElementById('mp_item').value = '';
-    document.getElementById('mp_item').focus();
-    renderMenuPage();
-  });
-}
-document.getElementById('mp_add').addEventListener('click', addOrderedItem);
-document.getElementById('mp_cancel').addEventListener('click', resetLogInputs);
-document.getElementById('mp_item').addEventListener('keydown', e => { if(e.key==='Enter') addOrderedItem(); });
 document.getElementById('mp_bulk').addEventListener('click', () => {
   const v = menuPageVenue;
   closeMenuPage();
@@ -1248,8 +1212,8 @@ function openLog(prefillVenue){
   document.getElementById('lg_venue').value = prefillVenue || '';
   document.getElementById('lg_section').value = '';
   document.getElementById('lg_item').value = '';
-  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_section' });
-  attachAutocomplete(document.getElementById('lg_section'), sectionOptions, { next: 'lg_item' });
+  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { inlineOnly: true });
+  attachAutocomplete(document.getElementById('lg_section'), sectionOptions, { inlineOnly: true });
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
@@ -1259,34 +1223,62 @@ document.getElementById('logLink').addEventListener('click', () => openLog());
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
 
-/* ====== Menu edit form ====== */
+/* ====== Menu form: log new items, or edit one existing row ====== */
 let menuEditingVenue = null;
+let menuEditingRow = null;      // set when a single logged row is being edited
 
 function addMenuRow(key, val){
   const wrap = document.getElementById('menuRows');
   const row = document.createElement('div');
   row.className = 'menurow';
   row.innerHTML = `
-    <div class="ac-wrap"><input class="mkey" placeholder="Section (e.g. Appetizers)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <input class="mkey" placeholder="Category (e.g. Appetizers)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false">
     <input class="mval" placeholder="Item you ate" value="${escapeHtml(val||'')}">
     <button class="rm" type="button">&times;</button>
   `;
   row.querySelector('.rm').addEventListener('click', () => row.remove());
   wrap.appendChild(row);
-  attachAutocomplete(row.querySelector('.mkey'), sectionOptions);
+  attachAutocomplete(row.querySelector('.mkey'), sectionOptions, { inlineOnly: true });
 }
 
-function openMenuForm(v){
+function showVendorField(show){
+  document.getElementById('mf_vendorField').style.display = show ? '' : 'none';
+  document.getElementById('mf_vendorLink').style.display  = show ? 'none' : '';
+}
+
+function openMenuForm(v, row){
   menuEditingVenue = v;
-  document.getElementById('menuFormTitle').textContent = 'Log eaten — ' + v.name;
+  menuEditingRow = row || null;
   const wrap = document.getElementById('menuRows');
   wrap.innerHTML = '';
-  addMenuRow('', ''); addMenuRow('', '');
+  document.getElementById('menuFormTitle').textContent =
+    (row ? 'Edit — ' : 'Log eaten — ') + v.name;
+  document.getElementById('addMenuRowBtn').style.display = row ? 'none' : '';
+
+  const vend = document.getElementById('mf_vendor');
+  vend.value = row ? (row.vendor || '') : '';
+  attachAutocomplete(vend, () => {
+    const mine = venueVendors(v.name);
+    return mine.length ? mine : vendorOptions();
+  }, { inlineOnly: true });
+  // only stadiums / food halls ever see this
+  showVendorField(!!(vend.value || isMultiVendorVenue(v.name)));
+
+  if(row) addMenuRow(row.section, row.item);
+  else { addMenuRow('', ''); addMenuRow('', ''); }
   overlay.classList.add('open');
   menuFormSheet.classList.add('open');
 }
-function closeMenuForm(){ overlay.classList.remove('open'); menuFormSheet.classList.remove('open'); menuEditingVenue=null; }
+function closeMenuForm(){
+  overlay.classList.remove('open');
+  menuFormSheet.classList.remove('open');
+  menuEditingVenue = null; menuEditingRow = null;
+}
 document.getElementById('addMenuRowBtn').addEventListener('click', () => addMenuRow('', ''));
+document.getElementById('mf_vendorLink').addEventListener('click', () => {
+  showVendorField(true);
+  document.getElementById('mf_vendor').focus();
+});
 document.getElementById('closeMenuForm').addEventListener('click', closeMenuForm);
 document.getElementById('backToMenuPage').addEventListener('click', () => {
   const v = menuEditingVenue;
@@ -1298,15 +1290,35 @@ document.getElementById('cancelMenuForm').addEventListener('click', closeMenuFor
 document.getElementById('saveMenuForm').addEventListener('click', async () => {
   const v = menuEditingVenue;
   if(!v) return;
+  const vendor = document.getElementById('mf_vendorField').style.display === 'none'
+    ? '' : document.getElementById('mf_vendor').value.trim();
   const pairs = Array.from(document.querySelectorAll('#menuRows .menurow')).map(r => ({
-    section: r.querySelector('.mkey').value.trim() || 'Other',
+    section: r.querySelector('.mkey').value.trim() || (vendor ? '' : 'Other'),
     item:    r.querySelector('.mval').value.trim()
   })).filter(p => p.item);
   if(!pairs.length){ alert('Add at least one item.'); return; }
+
+  if(menuEditingRow){
+    const old = menuEditingRow;
+    const p = pairs[0];
+    closeMenuForm();
+    await withBusy(async () => {
+      await loadAll();
+      const live = menuRows.find(r => r.venue === old.venue && r.vendor === old.vendor
+                                   && r.section === old.section && r.item === old.item);
+      if(!live){ alert('That row is no longer in the sheet.'); openMenuPage(v); return; }
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${live.index})`,
+        { values: [[v.name, v.location||'', vendor, p.section, p.item]] });
+      await loadAll(); populateCategories(); render();
+      openMenuPage(venues.find(x => x.name === v.name) || v);
+    });
+    return;
+  }
+
   closeMenuForm();
   await withBusy(async () => {
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-      { values: pairs.map(p => [v.name, v.location||'', '', p.section, p.item]) });
+      { values: pairs.map(p => [v.name, v.location||'', vendor, p.section, p.item]) });
     if(v.hasMenuDetail !== 'x'){
       const cur = await resolveVenue(v);
       if(cur && cur.hasMenuDetail !== 'x'){
