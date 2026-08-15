@@ -188,6 +188,33 @@ main{padding:2px 16px 90px;}
 .addline #mp_item{flex:1 1 100%;}
 .addline button{background:#fff;color:var(--accent);border:1px solid #ddd;border-radius:0;font-weight:400;}
 .bulklink{color:var(--accent);text-decoration:none;}
+
+/* ===== 2026.08.15: autocomplete, quick-pick, inline adds ===== */
+.ac-wrap{position:relative;}
+.ac-wrap input{width:100%;}
+.ac-box{position:absolute;left:0;right:0;top:100%;margin-top:2px;background:#fff;
+        border:1px solid #ddd;max-height:200px;overflow-y:auto;z-index:60;display:none;
+        box-shadow:0 6px 18px rgba(0,0,0,.10);}
+.ac-box.open{display:block;}
+.ac-box.up{top:auto;bottom:100%;margin:0 0 2px;}
+.ac-opt{padding:9px 11px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--hair);}
+.ac-opt:last-child{border-bottom:none;}
+.ac-opt.sel{background:#f4f4f2;}
+.ac-opt small{color:#999;font-size:11px;margin-left:6px;}
+.addline .ac-wrap{flex:1 1 38%;min-width:0;}
+.menurow .ac-wrap{flex:0 0 38%;min-width:0;}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
+.quick button{background:none;border:1px solid var(--hair);color:var(--accent);
+              font-size:12px;padding:4px 9px;cursor:pointer;border-radius:0;}
+.quick button.on{color:#111;font-weight:700;border-color:#999;}
+select.on{color:#111;font-weight:700;}
+.wantadd{display:flex;gap:6px;margin-top:8px;}
+.wantadd input{flex:1;min-width:0;padding:8px 10px;border:1px solid #ddd;background:#fff;
+               color:var(--text);font-size:14px;border-radius:0;}
+.wantadd button{flex:none;padding:8px 13px;border:1px solid #ddd;background:#fff;
+                color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
+#logSheet .addline{margin-top:10px;padding-top:10px;}
+.addline #lg_item{flex:1 1 100%;}
 </style>
 </head>
 <body>
@@ -213,6 +240,7 @@ main{padding:2px 16px 90px;}
   </div>
   <div class="row">
     <select id="categorySelect"><option value="">All categories</option></select>
+    <div class="chip" id="catClear" style="display:none;">&times; all</div>
     <div class="chip" data-rating="y">y</div>
     <div class="chip" data-rating="-">-</div>
     <div class="chip" data-rating="n">n</div>
@@ -253,7 +281,13 @@ main{padding:2px 16px 90px;}
   <button class="close-x" id="closeLog">&times;</button>
   <h2>ordered</h2>
   <div class="sub" id="logSub"></div>
-  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search everything ordered..."> autocomplete="off"></div>
+  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search everything ordered..." autocomplete="off"></div>
+  <div class="addline">
+    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="Place" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div class="ac-wrap"><input class="sec" id="lg_section" placeholder="Category" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <input id="lg_item" placeholder="Item ordered" autocomplete="off">
+    <button id="lg_add" type="button">add</button>
+  </div>
   <div id="logBody"></div>
 </div>
 
@@ -262,8 +296,14 @@ main{padding:2px 16px 90px;}
   <h2 id="formTitle">Add Spot</h2>
   <div class="sub">Writes directly to your Excel file in OneDrive.</div>
   <div class="field"><label>Name</label><input id="f_name"></div>
-  <div class="field"><label>Category</label><input id="f_category"></div>
-  <div class="field"><label>Location</label><input id="f_location"></div>
+  <div class="field"><label>Category</label>
+    <div class="ac-wrap"><input id="f_category" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="start typing, or tap one below"></div>
+    <div class="quick" id="f_category_quick"></div>
+  </div>
+  <div class="field"><label>Location</label>
+    <div class="ac-wrap"><input id="f_location" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="start typing, or tap one below"></div>
+    <div class="quick" id="f_location_quick"></div>
+  </div>
   <div class="field"><label>Rating</label>
     <select id="f_rating"><option value=""></option><option value="-">-</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
   </div>
@@ -293,7 +333,7 @@ main{padding:2px 16px 90px;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.09-4";
+const APP_VERSION = "2026.08.15-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -490,6 +530,30 @@ function populateCategories(){
     .map(variants => Object.entries(variants).sort((a,b)=>b[1]-a[1])[0][0])
     .sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
   cats.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
+  // rebuilding the options used to silently drop the active filter; keep it
+  if(state.category){
+    if(!cats.some(c => c === state.category)){
+      const o=document.createElement('option'); o.value=state.category; o.textContent=state.category; sel.appendChild(o);
+    }
+    sel.value = state.category;
+  }
+  syncCategoryUI();
+}
+
+// one tap back to everything, and the filter reads as "on" while it is on
+function syncCategoryUI(){
+  const sel = document.getElementById('categorySelect');
+  const clear = document.getElementById('catClear');
+  const on = !!state.category;
+  if(sel) sel.classList.toggle('on', on);
+  if(clear) clear.style.display = on ? '' : 'none';
+}
+function clearCategory(){
+  state.category = '';
+  state.shown = 60;
+  document.getElementById('categorySelect').value = '';
+  syncCategoryUI();
+  render();
 }
 
 function isBrowsing(){
@@ -546,15 +610,20 @@ function hideSuggest(){ suggestBox.classList.remove('open'); suggestBox.innerHTM
 function showSuggest(q){
   q = q.trim().toLowerCase();
   if(q.length < 2){ hideSuggest(); return; }
-  const starts = [], contains = [];
+  // rank: name prefix > start of any word in the name > anywhere in the name
+  // > category/location. The old loop stopped early and only ever looked at the
+  // very start of the name, so a second word stopped matching anything.
+  const starts = [], words = [], contains = [], meta = [];
   for(const v of venues){
     const n = (v.name||'').toLowerCase();
     if(!n) continue;
     if(n.startsWith(q)) starts.push(v);
+    else if(n.split(/[^a-z0-9]+/).some(w => w && w.startsWith(q))) words.push(v);
     else if(n.includes(q)) contains.push(v);
+    else if(((v.category||'') + ' ' + (v.location||'')).toLowerCase().includes(q)) meta.push(v);
     if(starts.length >= 8) break;
   }
-  sugItems = starts.concat(contains).slice(0, 8);
+  sugItems = starts.concat(words, contains, meta).slice(0, 8);
   if(!sugItems.length){ hideSuggest(); return; }
   suggestBox.innerHTML = sugItems.map((v,i) => `<div class="sug" data-i="${i}">${escapeHtml(v.name)}<small>${escapeHtml([v.category, v.location].filter(Boolean).join(' \u00b7 '))}</small></div>`).join('');
   suggestBox.querySelectorAll('.sug').forEach(el => {
@@ -591,7 +660,8 @@ document.getElementById('searchBox').addEventListener('keydown', e => {
   }
 });
 document.getElementById('searchBox').addEventListener('blur', () => setTimeout(hideSuggest, 120));
-document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; render(); });
+document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; syncCategoryUI(); render(); });
+document.getElementById('catClear').addEventListener('click', clearCategory);
 document.querySelectorAll('.chip[data-rating]').forEach(chip => {
   chip.addEventListener('click', () => {
     const r = chip.dataset.rating;
@@ -632,6 +702,7 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
   document.getElementById('categorySelect').value='';
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
   document.getElementById('nearChip').textContent='nearest';
+  syncCategoryUI();
   hideSuggest();
   render();
 });
@@ -645,9 +716,12 @@ function openDetail(v){
   const eaten = menus[v.name] || {};
   const itemCount = Object.values(eaten).reduce((n,a)=>n+a.length,0);
   const wants = String(v.toOrder||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
-  const wantHtml = wants.length ? '<div class="field"><label>To Order:</label>' +
+  const wantHtml = '<div class="field"><label>To Order</label>' +
     wants.map((w,i)=>`<div class="wantrow"><span>${escapeHtml(w)}</span><button class="ate" data-i="${i}" type="button">ate it</button></div>`).join('') +
-    '</div>' : '';
+    `<div class="wantadd">
+       <input id="d_want" placeholder="to order" autocomplete="off">
+       <button id="d_wantAdd" type="button">add</button>
+     </div></div>`;
   document.getElementById('detailContent').innerHTML = `
     <h2>${escapeHtml(v.name||'')}</h2>
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
@@ -692,6 +766,32 @@ function openDetail(v){
       });
     });
   });
+  // add straight to the To Order list without opening the edit form
+  async function addWant(){
+    const inp = document.getElementById('d_want');
+    const text = (inp.value || '').trim();
+    if(!text) return;
+    const next = wants.concat([text]).join('; ');
+    inp.value = '';
+    await withBusy(async () => {
+      const cur = await resolveVenue(v);
+      if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); return; }
+      const rec = Object.assign({}, cur, { toOrder: next });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      await loadAll();
+      const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
+                 || venues.find(x => x.name === v.name);
+      if(fresh) fresh.toOrder = next;   // same reason as the rating: our write wins
+      populateCategories(); render();
+      openDetail(fresh || Object.assign({}, v, { toOrder: next }));
+      const again = document.getElementById('d_want');
+      if(again) again.focus();
+    });
+  }
+  document.getElementById('d_wantAdd').addEventListener('click', addWant);
+  document.getElementById('d_want').addEventListener('keydown', e => { if(e.key === 'Enter') addWant(); });
+
   document.querySelectorAll('#detailContent .rateBtn').forEach(el => {
     el.addEventListener('click', async () => {
       const want = el.dataset.r;
@@ -714,14 +814,19 @@ function openDetail(v){
           if(!cur) throw new Error('row not found');
           await graph('PATCH', rowPath(cur.index), body);
         }
+        // The write succeeded. Re-read only to re-sync the row index — Graph can
+        // still hand back the pre-write value for a moment, and trusting that
+        // read is what used to wipe a rating set right after a search.
         await loadAll();
         const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
                    || venues.find(x => x.name === v.name);
         if(fresh){
-          v.index = fresh.index; v.rating = fresh.rating;
-          document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
-            b.classList.toggle('on', b.dataset.r === (fresh.rating||'').trim()));
+          v.index = fresh.index;
+          fresh.rating = next;          // our write wins over a stale read
         }
+        v.rating = next;
+        document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
+          b.classList.toggle('on', b.dataset.r === next));
         populateCategories(); render();
       }catch(err){
         v.rating = prev;                             // roll the UI back
@@ -758,7 +863,7 @@ function openDetail(v){
 }
 function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); lastPickPool = 0; }
 document.getElementById('closeDetail').addEventListener('click', closeDetail);
-overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); closeMenuPage(); });
+overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); closeMenuPage(); closeLog(); });
 
 let lastPickPool = 0;
 let editingVenue = null;
@@ -771,6 +876,12 @@ function openForm(v){
   document.getElementById('f_rating').value = v ? (v.rating||'').trim() : '';
   document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
   document.getElementById('f_notes').value = v ? (v.notes||'') : '';
+  const catIn = document.getElementById('f_category');
+  const locIn = document.getElementById('f_location');
+  attachAutocomplete(catIn, categoryOptions);
+  attachAutocomplete(locIn, locationOptions);
+  fillQuick('f_category_quick', catIn, categoryOptions());
+  fillQuick('f_location_quick', locIn, locationOptions());
   overlay.classList.add('open');
   formSheet.classList.add('open');
 }
@@ -897,31 +1008,158 @@ const SECTIONS = ['Appetizers','Mains','Sandwiches & Burgers','Pizza','Tacos & A
                   'Coffee & Tea','Drinks','Cocktails','Beer','Wine','Spirits',
                   'Specials & Happy Hour','Other'];
 
-// iOS-style inline completion: finishes the word in place and selects the
-// suggested remainder, so typing over it or pressing delete just discards it.
-function attachInlineComplete(input){
+/* ====== Autocomplete (rewritten 2026.08.15) ======
+   The old version only completed when what you typed was a prefix of the whole
+   option, so it went dead the moment you started on a later word ("burgers",
+   "sauces"). This matches whole-string prefixes, the start of any word inside
+   an option, and finally any substring — and always shows a tappable list, so
+   completion never silently disappears. Inline completion still happens for
+   whole-string prefixes only, and only while the caret is at the end. */
+
+function acRank(options, val){
+  const q = val.trim().toLowerCase();
+  if(!q) return options.slice(0, 12);
+  const pre = [], word = [], sub = [];
+  for(const o of options){
+    const lo = o.toLowerCase();
+    if(lo === q) continue;
+    if(lo.startsWith(q)) pre.push(o);
+    else if(lo.split(/[^a-z0-9]+/).some(w => w && w.startsWith(q))) word.push(o);
+    else if(lo.includes(q)) sub.push(o);
+  }
+  return pre.concat(word, sub).slice(0, 12);
+}
+
+function attachAutocomplete(input, getOptions, opts){
   if(!input || input._ac) return;
   input._ac = true;
+  opts = opts || {};
+  let wrap = input.parentNode;
+  if(!wrap || !wrap.classList.contains('ac-wrap')){
+    const w = document.createElement('div');
+    w.className = 'ac-wrap';
+    input.parentNode.insertBefore(w, input);
+    w.appendChild(input);
+    wrap = w;
+  }
+  const box = document.createElement('div');
+  box.className = 'ac-box';
+  wrap.appendChild(box);
+
+  let items = [], sel = -1, skip = false;
+
+  function hide(){ box.classList.remove('open'); box.innerHTML = ''; items = []; sel = -1; }
+  function accept(t){
+    input.value = t;
+    hide();
+    if(opts.onPick) opts.onPick(t);
+    if(opts.next){ const n = document.getElementById(opts.next); if(n) n.focus(); }
+  }
+  function show(){
+    const all = getOptions() || [];
+    items = acRank(all, input.value);
+    if(!items.length){ hide(); return; }
+    box.innerHTML = items.map((t,i) => `<div class="ac-opt" data-i="${i}">${escapeHtml(t)}</div>`).join('');
+    box.querySelectorAll('.ac-opt').forEach(el => {
+      el.addEventListener('mousedown', ev => { ev.preventDefault(); accept(items[+el.dataset.i]); });
+    });
+    sel = -1;
+    box.classList.remove('up');
+    box.classList.add('open');
+    // sheets scroll and clip; flip the list above the field when it would
+    // otherwise open off the bottom of the screen
+    const r = input.getBoundingClientRect();
+    if(window.innerHeight - r.bottom < Math.min(box.scrollHeight + 12, 212)) box.classList.add('up');
+  }
+
   input.addEventListener('keydown', e => {
-    if(e.key === 'Backspace' || e.key === 'Delete') input._skip = true;
-    if(e.key === 'Tab' || e.key === 'ArrowRight' || e.key === 'Enter'){
+    if(e.key === 'Backspace' || e.key === 'Delete'){ skip = true; return; }
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      if(!items.length){ show(); return; }
+      e.preventDefault();
+      sel += (e.key === 'ArrowDown' ? 1 : -1);
+      if(sel < 0) sel = items.length - 1;
+      if(sel >= items.length) sel = 0;
+      box.querySelectorAll('.ac-opt').forEach((el,i) => el.classList.toggle('sel', i === sel));
+    } else if(e.key === 'Enter'){
+      if(sel >= 0){ e.preventDefault(); accept(items[sel]); return; }
       const a = input.selectionStart, b = input.selectionEnd;
-      if(b > a){ input.setSelectionRange(b, b); if(e.key !== 'Enter') e.preventDefault(); }
+      if(b > a) input.setSelectionRange(b, b);   // keep the inline completion
+      hide();
+    } else if(e.key === 'Tab' || e.key === 'ArrowRight'){
+      const a = input.selectionStart, b = input.selectionEnd;
+      if(b > a){ e.preventDefault(); input.setSelectionRange(b, b); hide(); }
+    } else if(e.key === 'Escape'){
+      hide();
     }
   });
+
   input.addEventListener('input', () => {
-    if(input._skip){ input._skip = false; return; }
+    const wasSkip = skip; skip = false;
+    show();
     const val = input.value;
-    if(!val) return;
-    const hit = SECTIONS.find(o => o.toLowerCase().startsWith(val.toLowerCase()) && o.length > val.length);
+    if(wasSkip || !val) return;
+    if(input.selectionStart !== val.length) return;   // caret mid-string: don't fight the user
+    const hit = (getOptions() || []).find(o =>
+      o.toLowerCase().startsWith(val.toLowerCase()) && o.length > val.length);
     if(!hit) return;
     input.value = hit;
-    input.setSelectionRange(val.length, hit.length);
+    try{ input.setSelectionRange(val.length, hit.length); }catch(err){}
   });
+
+  input.addEventListener('focus', show);
+  input.addEventListener('blur', () => setTimeout(hide, 150));
+}
+
+/* distinct values, most-used first, canonical casing wins */
+function distinctValues(getter, src){
+  const groups = {};
+  (src || venues).forEach(r => {
+    const s = (getter(r) || '').trim();
+    if(!s) return;
+    const k = s.toLowerCase();
+    if(!groups[k]) groups[k] = {};
+    groups[k][s] = (groups[k][s] || 0) + 1;
+  });
+  return Object.values(groups).map(variants => {
+    const e = Object.entries(variants).sort((a,b) => b[1] - a[1]);
+    return { label: e[0][0], n: e.reduce((s,x) => s + x[1], 0) };
+  }).sort((a,b) => b.n - a.n || a.label.localeCompare(b.label));
+}
+function categoryOptions(){ return distinctValues(v => v.category).map(x => x.label); }
+function locationOptions(){ return distinctValues(v => v.location).map(x => x.label); }
+function vendorOptions(){ return distinctValues(r => r.vendor, menuRows).map(x => x.label); }
+function venueNameOptions(){ return distinctValues(v => v.name).map(x => x.label); }
+function sectionOptions(){
+  const out = [], seen = {};
+  const add = s => {
+    s = (s || '').trim(); if(!s) return;
+    const k = s.toLowerCase(); if(seen[k]) return;
+    seen[k] = 1; out.push(s);
+  };
+  distinctValues(r => r.section, menuRows).forEach(x => add(x.label));
+  SECTIONS.forEach(add);
+  return out;
 }
 
 function refreshSectionList(){
-  attachInlineComplete(document.getElementById('mp_section'));
+  attachAutocomplete(document.getElementById('mp_section'), sectionOptions);
+  attachAutocomplete(document.getElementById('mp_vendor'), vendorOptions);
+}
+
+/* tap-to-fill shortcuts under the Add/Edit fields */
+function fillQuick(wrapId, input, options){
+  const wrap = document.getElementById(wrapId);
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  options.slice(0, 8).forEach(t => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = t;
+    if(input.value.trim().toLowerCase() === t.toLowerCase()) b.className = 'on';
+    b.addEventListener('click', () => { input.value = t; fillQuick(wrapId, input, options); });
+    wrap.appendChild(b);
+  });
 }
 
 function openMenuPage(v){
@@ -1033,9 +1271,52 @@ function renderLog(){
     });
   });
 }
-function openLog(){ document.getElementById('logSearch').value=''; renderLog(); overlay.classList.add('open'); logSheet.classList.add('open'); }
+/* add an ordered item from the global log, without hunting for the place first */
+async function addLogItem(){
+  const nameIn = document.getElementById('lg_venue');
+  const secIn  = document.getElementById('lg_section');
+  const itemIn = document.getElementById('lg_item');
+  const name = nameIn.value.trim();
+  const sec  = secIn.value.trim() || 'Other';
+  const item = itemIn.value.trim();
+  if(!name){ alert('Which place?'); nameIn.focus(); return; }
+  if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
+  const v = venues.find(x => (x.name||'').toLowerCase() === name.toLowerCase());
+  if(!v){ alert('No place called "' + name + '" yet — add it with + first.'); nameIn.focus(); return; }
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: [[v.name, v.location||'', '', sec, item]] });
+    if(v.hasMenuDetail !== 'x'){
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
+    }
+    await loadAll(); populateCategories(); render();
+    nameIn.value = v.name;           // stay on the same place for the next item
+    itemIn.value = '';
+    renderLog();
+    itemIn.focus();
+  });
+}
+document.getElementById('lg_add').addEventListener('click', addLogItem);
+document.getElementById('lg_item').addEventListener('keydown', e => { if(e.key === 'Enter') addLogItem(); });
+
+function openLog(prefillVenue){
+  document.getElementById('logSearch').value='';
+  document.getElementById('lg_venue').value = prefillVenue || '';
+  document.getElementById('lg_section').value = '';
+  document.getElementById('lg_item').value = '';
+  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_section' });
+  attachAutocomplete(document.getElementById('lg_section'), sectionOptions, { next: 'lg_item' });
+  renderLog();
+  overlay.classList.add('open');
+  logSheet.classList.add('open');
+}
 function closeLog(){ overlay.classList.remove('open'); logSheet.classList.remove('open'); }
-document.getElementById('logLink').addEventListener('click', openLog);
+document.getElementById('logLink').addEventListener('click', () => openLog());
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
 
@@ -1047,13 +1328,13 @@ function addMenuRow(key, val){
   const row = document.createElement('div');
   row.className = 'menurow';
   row.innerHTML = `
-    <input class="mkey" placeholder="Section (e.g. Appetizers)" value="${escapeHtml(key||'')}">
+    <div class="ac-wrap"><input class="mkey" placeholder="Section (e.g. Appetizers)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false"></div>
     <input class="mval" placeholder="Item you ate" value="${escapeHtml(val||'')}">
     <button class="rm" type="button">&times;</button>
   `;
   row.querySelector('.rm').addEventListener('click', () => row.remove());
   wrap.appendChild(row);
-  attachInlineComplete(row.querySelector('.mkey'));
+  attachAutocomplete(row.querySelector('.mkey'), sectionOptions);
 }
 
 function openMenuForm(v){
