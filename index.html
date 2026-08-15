@@ -180,6 +180,7 @@ main{padding:2px 16px 90px;}
 .mp-cat{color:#999;text-transform:none;letter-spacing:0;font-size:12px;}
 .mp-row{border-bottom:1px solid var(--hair);cursor:pointer;}
 .log-venue{color:#999;font-size:12px;}
+.log-head{font-weight:700;font-size:14px;color:#111;margin:16px 0 2px;cursor:pointer;}
 #mp_cancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
 .addline{flex-wrap:wrap;border-top-color:var(--hair);}
 .addline input{background:#fff;border:1px solid #ddd;border-radius:0;}
@@ -200,7 +201,7 @@ main{padding:2px 16px 90px;}
 </div>
 
 <header style="display:none;" id="appHeader">
-  <h1>eat + drink <a class="loglink" id="logLink">log</a></h1>
+  <h1>eat + drink <a class="loglink" id="logLink">ordered</a></h1>
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
@@ -250,9 +251,9 @@ main{padding:2px 16px 90px;}
 
 <div class="sheet" id="logSheet">
   <button class="close-x" id="closeLog">&times;</button>
-  <h2>log</h2>
+  <h2>ordered</h2>
   <div class="sub" id="logSub"></div>
-  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search the log..." autocomplete="off"></div>
+  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search everything ordered..."> autocomplete="off"></div>
   <div id="logBody"></div>
 </div>
 
@@ -292,7 +293,7 @@ main{padding:2px 16px 90px;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.09-3";
+const APP_VERSION = "2026.08.09-4";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -660,7 +661,7 @@ function openDetail(v){
     ${wantHtml}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     <div class="btnrow" style="margin-top:4px;">
-      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `log (${itemCount})` : 'log'}</button>
+      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `ordered (${itemCount})` : 'ordered'}</button>
       ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">again (${lastPickPool})</button>` : ''}
     </div>
     <div class="btnrow">
@@ -1007,13 +1008,23 @@ function renderLog(){
   let rows = menuRows.filter(r => r.item && r.item !== '(no items recorded)');
   if(q) rows = rows.filter(r => (r.venue+' '+r.vendor+' '+r.section+' '+r.item).toLowerCase().includes(q));
   rows = rows.slice().sort((a,b) => a.venue.localeCompare(b.venue) || a.vendor.localeCompare(b.vendor) || a.section.localeCompare(b.section) || a.item.localeCompare(b.item));
-  document.getElementById('logSub').textContent = rows.length + ' item' + (rows.length===1?'':'s');
-  document.getElementById('logBody').innerHTML = rows.slice(0,400).map(r => `
-    <div class="mp-row logrow" data-venue="${escapeHtml(r.venue)}">
+  const nVenues = new Set(rows.map(r => r.venue)).size;
+  document.getElementById('logSub').textContent = rows.length + ' item' + (rows.length===1?'':'s') + ' · ' + nVenues + ' place' + (nVenues===1?'':'s');
+  let html = ''; let last = null; let shown = 0;
+  for(const r of rows){
+    if(shown >= 500){ html += '<div class="hint-empty">refine the search to see the rest</div>'; break; }
+    if(r.venue !== last){
+      html += `<div class="log-head" data-venue="${escapeHtml(r.venue)}">${escapeHtml(r.venue)}</div>`;
+      last = r.venue;
+    }
+    html += `<div class="mp-row logrow" data-venue="${escapeHtml(r.venue)}">
       <span class="mp-cat">${escapeHtml([r.vendor,r.section].filter(Boolean).join(' — ') || 'Other')}</span>
-      <span class="mp-it">${escapeHtml(r.item)}<span class="log-venue"> — ${escapeHtml(r.venue)}</span></span>
-    </div>`).join('') + (rows.length>400 ? '<div class="hint-empty">refine the search to see the rest</div>' : '');
-  document.querySelectorAll('#logBody .logrow').forEach(el => {
+      <span class="mp-it">${escapeHtml(r.item)}</span>
+    </div>`;
+    shown++;
+  }
+  document.getElementById('logBody').innerHTML = html;
+  document.querySelectorAll('#logBody .logrow, #logBody .log-head').forEach(el => {
     el.addEventListener('click', () => {
       const name = el.dataset.venue;
       const v = venues.find(x => x.name === name);
