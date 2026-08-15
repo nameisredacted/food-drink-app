@@ -317,7 +317,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.15-4";
+const APP_VERSION = "2026.08.15-5";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -473,11 +473,11 @@ function fmtDist(d){
 function matches(v){
   if(state.category && (v.category||'').trim().toLowerCase() !== state.category.trim().toLowerCase()) return false;
   if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
+  // name only. Category has its own picker, and everything ordered has its own
+  // search on the "ordered" page; folding them in here made the list noisy.
   if(state.query){
-    const q = state.query.toLowerCase();
-    const eaten = menus[v.name] ? Object.entries(menus[v.name]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';
-    const hay = [v.name, v.category, v.location, v.notes, v.toOrder, eaten].filter(Boolean).join(' ').toLowerCase();
-    if(!hay.includes(q)) return false;
+    const q = state.query.trim().toLowerCase();
+    if(q && !(v.name||'').toLowerCase().includes(q)) return false;
   }
   return true;
 }
