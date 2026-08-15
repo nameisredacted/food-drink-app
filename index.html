@@ -202,8 +202,6 @@ select.on{color:#111;font-weight:700;}
                color:var(--text);font-size:14px;border-radius:0;}
 .wantadd button{flex:none;padding:8px 13px;border:1px solid #ddd;background:#fff;
                 color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
-#logSheet .addline{margin-top:10px;padding-top:10px;}
-.addline #lg_item{flex:1 1 100%;}
 </style>
 </head>
 <body>
@@ -261,12 +259,6 @@ select.on{color:#111;font-weight:700;}
   <h2>ordered</h2>
   <div class="sub" id="logSub"></div>
   <div class="searchrow"><input class="search" id="logSearch" placeholder="Search everything ordered..." autocomplete="off"></div>
-  <div class="addline">
-    <input class="sec" id="lg_venue" placeholder="Place" autocomplete="off" autocorrect="off" spellcheck="false">
-    <input class="sec" id="lg_section" placeholder="Category" autocomplete="off" autocorrect="off" spellcheck="false">
-    <input id="lg_item" placeholder="Item ordered" autocomplete="off">
-    <button id="lg_add" type="button">add</button>
-  </div>
   <div id="logBody"></div>
 </div>
 
@@ -317,7 +309,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.15-5";
+const APP_VERSION = "2026.08.15-6";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1174,52 +1166,14 @@ function renderLog(){
     });
   });
 }
-/* add an ordered item from the global log, without hunting for the place first */
-async function addLogItem(){
-  const nameIn = document.getElementById('lg_venue');
-  const secIn  = document.getElementById('lg_section');
-  const itemIn = document.getElementById('lg_item');
-  const name = nameIn.value.trim();
-  const sec  = secIn.value.trim() || 'Other';
-  const item = itemIn.value.trim();
-  if(!name){ alert('Which place?'); nameIn.focus(); return; }
-  if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
-  const v = venues.find(x => (x.name||'').toLowerCase() === name.toLowerCase());
-  if(!v){ alert('No place called "' + name + '" yet — add it with + first.'); nameIn.focus(); return; }
-  await withBusy(async () => {
-    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-      { values: [[v.name, v.location||'', '', sec, item]] });
-    if(v.hasMenuDetail !== 'x'){
-      const cur = await resolveVenue(v);
-      if(cur && cur.hasMenuDetail !== 'x'){
-        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
-        delete rec.index;
-        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
-      }
-    }
-    await loadAll(); populateCategories(); render();
-    nameIn.value = v.name;           // stay on the same place for the next item
-    itemIn.value = '';
-    renderLog();
-    itemIn.focus();
-  });
-}
-document.getElementById('lg_add').addEventListener('click', addLogItem);
-document.getElementById('lg_item').addEventListener('keydown', e => { if(e.key === 'Enter') addLogItem(); });
-
-function openLog(prefillVenue){
-  document.getElementById('logSearch').value='';
-  document.getElementById('lg_venue').value = prefillVenue || '';
-  document.getElementById('lg_section').value = '';
-  document.getElementById('lg_item').value = '';
-  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { inlineOnly: true });
-  attachAutocomplete(document.getElementById('lg_section'), sectionOptions, { inlineOnly: true });
+function openLog(){
+  document.getElementById('logSearch').value = '';
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
 }
 function closeLog(){ overlay.classList.remove('open'); logSheet.classList.remove('open'); }
-document.getElementById('logLink').addEventListener('click', () => openLog());
+document.getElementById('logLink').addEventListener('click', openLog);
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
 
