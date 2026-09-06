@@ -225,7 +225,10 @@ select.on{color:#111;font-weight:700;}
    own optical middle (baseline + half the x-height), which is what "level with
    the copy" actually means. The hanging indent keeps a wrapped second line
    under the text rather than under the plus. */
-#logSheet .hintline{display:block;margin-top:8px;padding-left:28px;text-indent:-28px;}
+/* the row itself carries the copy's own size: vertical-align:middle measures
+   the x-height of the PARENT font, so a 14px row hung the plus above 12px text */
+#logSheet .hintline{display:block;margin-top:8px;padding-left:28px;text-indent:-28px;
+                    font-size:12px;line-height:1.35;}
 #lg_newLoc{display:inline-block;vertical-align:middle;width:20px;height:20px;
            margin-right:8px;padding:0;text-indent:0;text-decoration:none;cursor:pointer;}
 #lg_newLoc svg{display:block;overflow:visible;}
@@ -397,7 +400,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-15";
+const APP_VERSION = "2026.09.06-16";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
