@@ -276,14 +276,17 @@ select.on{color:#111;font-weight:700;}
   <h2 id="menuPageTitle"></h2>
   <div class="sub" id="menuPageSub"></div>
   <div id="menuPageBody"></div>
-  <div class="addline">
-    <input class="sec" id="mp_vendor" placeholder="Vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
-    <input class="sec" id="mp_section" placeholder="Category" autocomplete="off" autocapitalize="words" spellcheck="false">
-    <input id="mp_item" placeholder="Item ordered" autocomplete="off">
-    <button id="mp_add" type="button">add</button>
-    <button id="mp_cancel" type="button" style="display:none;">cancel</button>
+  <button class="addRowBtn" id="mp_new" type="button" style="margin-top:14px;">+ add items</button>
+  <div id="mp_addWrap" style="display:none;">
+    <div class="addline">
+      <input class="sec" id="mp_vendor" placeholder="Vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
+      <input class="sec" id="mp_section" placeholder="Category" autocomplete="off" autocapitalize="words" spellcheck="false">
+      <input id="mp_item" placeholder="Item ordered" autocomplete="off">
+      <button id="mp_add" type="button">add</button>
+      <button id="mp_cancel" type="button">cancel</button>
+    </div>
+    <span class="bulklink" id="mp_bulk">add several at once</span>
   </div>
-  <span class="bulklink" id="mp_bulk">add several at once</span>
 </div>
 
 <div class="sheet" id="diagSheet">
@@ -350,7 +353,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.05-2";
+const APP_VERSION = "2026.09.06-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1058,8 +1061,7 @@ function renderMenuPage(){
       document.getElementById('mp_section').value = live.section;
       document.getElementById('mp_item').value = live.item;
       document.getElementById('mp_add').textContent = 'save';
-      document.getElementById('mp_cancel').style.display = '';
-      document.getElementById('mp_item').focus();
+      showAddLine(true);
     });
   });
   body.querySelectorAll('.mp-row button').forEach(btn => {
@@ -1318,7 +1320,7 @@ function resetLogInputs(){
   document.getElementById('mp_section').value = '';
   document.getElementById('mp_item').value = '';
   document.getElementById('mp_add').textContent = 'add';
-  document.getElementById('mp_cancel').style.display = 'none';
+  hideAddLine();
 }
 async function addOrderedItem(){
   const v = menuPageVenue;
@@ -1356,10 +1358,22 @@ async function addOrderedItem(){
     await loadAll(); populateCategories(); render(); refreshSectionList();
     menuPageVenue = matchVenue(v) || v;
     document.getElementById('mp_item').value = '';
-    document.getElementById('mp_item').focus();
+    showAddLine(true);
     renderMenuPage();
   });
 }
+/* The add fields stay out of sight until asked for: the page is a list of what
+   has been ordered, not a form. */
+function showAddLine(focus){
+  document.getElementById('mp_addWrap').style.display = '';
+  document.getElementById('mp_new').style.display = 'none';
+  if(focus) document.getElementById('mp_item').focus();
+}
+function hideAddLine(){
+  document.getElementById('mp_addWrap').style.display = 'none';
+  document.getElementById('mp_new').style.display = '';
+}
+document.getElementById('mp_new').addEventListener('click', () => showAddLine(true));
 document.getElementById('mp_add').addEventListener('click', addOrderedItem);
 document.getElementById('mp_cancel').addEventListener('click', resetLogInputs);
 document.getElementById('mp_item').addEventListener('keydown', e => { if(e.key==='Enter') addOrderedItem(); });
