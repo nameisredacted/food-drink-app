@@ -220,7 +220,8 @@ select.on{color:#111;font-weight:700;}
 #lg_multi .locpicks{margin-top:6px;}
 #lg_multi .locpick{display:flex;align-items:center;gap:9px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--hair);}
 #lg_multi .locpick:last-child{border-bottom:none;}
-#lg_multi .chainrow{display:flex;align-items:center;gap:8px;font-size:13px;color:#666;margin-top:8px;}
+#lg_multi .chainrow,#lg_new .chainrow{display:flex;align-items:center;gap:8px;font-size:13px;color:#666;margin-top:8px;}
+#lg_newLoc{margin-top:10px;}
 #lg_multi .addline{margin-top:8px;padding-top:0;border-top:none;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
@@ -305,6 +306,7 @@ select.on{color:#111;font-weight:700;}
   <div id="diagBody"></div>
   <div class="btnrow" style="margin-top:14px;">
     <button class="btn ghost" id="diagFixFlags">Repair menu flags</button>
+    <button class="btn ghost" id="diagMarkChains">Mark chains</button>
   </div>
 </div>
 
@@ -317,6 +319,7 @@ select.on{color:#111;font-weight:700;}
     <div class="ac-wrap"><input id="lg_what" placeholder="what" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <button id="lg_add" type="button">add</button>
   </div>
+  <span class="bulklink" id="lg_newLoc">+ another location, or a place that isn't on the list</span>
   <div id="lg_new" style="display:none;">
     <div class="newmsg" id="lg_newMsg"></div>
     <div class="addline">
@@ -325,6 +328,7 @@ select.on{color:#111;font-weight:700;}
       <button id="lg_newAdd" type="button">add place</button>
       <button id="lg_newCancel" type="button">cancel</button>
     </div>
+    <label class="chainrow" id="lg_brandRow" style="display:none;"><input type="checkbox" id="lg_sameBrand" checked> <span id="lg_brandTxt"></span></label>
   </div>
   <div id="lg_multi" style="display:none;">
     <div class="newmsg" id="lg_multiMsg"></div>
@@ -380,7 +384,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-7";
+const APP_VERSION = "2026.09.06-8";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -452,7 +456,12 @@ async function deleteTableRow(sheet, table, index){
   }
 }
 
-const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo'];
+/* Chain is the 12th column and may not exist in the workbook yet: rows are
+   read and written at the width the table actually has, and the data check
+   adds the column the first time chains are marked. */
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain'];
+const CHAIN_COL = 'Chain';
+let mainWidth = COLS.length - 1;   // until the first read says otherwise
 
 function rowToObj(rowValues, index){
   const o = { index };
@@ -460,7 +469,15 @@ function rowToObj(rowValues, index){
   return o;
 }
 function objToRow(o){
-  return COLS.map(c => o[c] !== undefined ? o[c] : '');
+  const row = COLS.map(c => o[c] !== undefined ? o[c] : '');
+  // never write more (or fewer) cells than the table actually has
+  return row.slice(0, mainWidth).concat(Array(Math.max(0, mainWidth - row.length)).fill(''));
+}
+function hasChainCol(){ return mainWidth >= COLS.length; }
+function isChain(v){ return String((v && v.chain) || '').trim().toLowerCase() === 'x'; }
+/* every row carrying this name, whatever the location */
+function brandRows(name){
+  return venues.filter(x => normTxt(x.name) === normTxt(name));
 }
 
 /* ====== VENUE IDENTITY ======
@@ -539,6 +556,8 @@ async function loadAll(){
     rows = rows.concat(data.value);
     next = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
   }
+  if(rows.length && Array.isArray(rows[0].values && rows[0].values[0]))
+    mainWidth = Math.max(COLS.length - 1, rows[0].values[0].length);
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
 
   // indexes used to attach menu rows to the right branch
@@ -848,7 +867,7 @@ function openDetail(v){
      </div></div>`;
   document.getElementById('detailContent').innerHTML = `
     <h2>${escapeHtml(v.name||'')}</h2>
-    <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
+    <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${isChain(v)?' · chain':''}</div>
     <div class="field"><label>Rating</label>
       <div class="rateRow">
         <div class="rateBtn y ${(v.rating||'').trim()==='y'?'on':''}" data-r="y">y</div>
@@ -1482,6 +1501,55 @@ async function addLogItem(){
   });
 }
 
+/* ====== Chain marking ======
+   A name that exists in more than one location is a brand: Rintaro SF and
+   Rintaro Oakland are the same sign over two doors. The flag lives on every
+   row of that name so a filter on one branch finds the rest. */
+async function ensureChainColumn(){
+  if(hasChainCol()) return true;
+  try{
+    await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/columns`,
+      { name: CHAIN_COL });
+    mainWidth = COLS.length;
+    return true;
+  }catch(e){
+    alert('Could not add the "' + CHAIN_COL + '" column to the sheet: ' + e.message);
+    return false;
+  }
+}
+/* Mark every row of these names as a chain. Returns how many rows changed. */
+async function markChains(names){
+  const want = new Set(names.map(normTxt).filter(Boolean));
+  if(!want.size) return 0;
+  if(!await ensureChainColumn()) return 0;
+  const todo = venues.filter(v => want.has(normTxt(v.name)) && !isChain(v));
+  for(const v of todo){
+    const cur = await resolveVenue(v);
+    if(!cur) continue;
+    const rec = Object.assign({}, cur, { chain: 'x' });
+    delete rec.index;
+    await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`,
+      { values: [objToRow(rec)] });
+  }
+  return todo.length;
+}
+/* Names that sit in more than one location — the chains, whether or not they
+   are flagged yet. */
+function multiLocationNames(){
+  const byName = new Map();
+  venues.forEach(v => {
+    const n = normTxt(v.name);
+    if(!n) return;
+    if(!byName.has(n)) byName.set(n, new Set());
+    byName.get(n).add(normTxt(v.location || ''));
+  });
+  return [...byName.entries()].filter(([, locs]) => locs.size > 1).map(([n]) => n);
+}
+function unmarkedChainRows(){
+  const multi = new Set(multiLocationNames());
+  return venues.filter(v => multi.has(normTxt(v.name)) && !isChain(v));
+}
+
 /* One item, one place: the row, plus the tab-1 flag if this is its first. */
 async function logItemAt(v, item){
   // no Category box any more: reuse the category this item was last filed
@@ -1511,7 +1579,9 @@ function showMultiPlace(name, hits){
     hits.length + ' places called "' + name + '" — which one?';
   document.getElementById('lg_multiPicks').innerHTML = hits.map((v,i) =>
     `<label class="locpick"><input type="radio" name="lg_which" value="${i}"${i===0?' checked':''}>` +
-    `<span>${escapeHtml(v.location || 'no location')}${v.category ? ' · ' + escapeHtml(v.category) : ''}</span></label>`).join('');
+    `<span>${escapeHtml(v.location || 'no location')}${v.category ? ' · ' + escapeHtml(v.category) : ''}` +
+    `${isChain(v) ? ' · chain' : ''}</span></label>`).join('') +
+    `<label class="locpick"><input type="radio" name="lg_which" value="new"><span>somewhere else — add that location</span></label>`;
   document.getElementById('lg_multiAll').checked = false;
   document.getElementById('lg_multi').style.display = '';
 }
@@ -1527,6 +1597,7 @@ async function addLogItemMulti(){
   const { name, hits } = pendingMulti;
   const all = document.getElementById('lg_multiAll').checked;
   const picked = document.querySelector('#lg_multiPicks input:checked');
+  if(!all && picked && picked.value === 'new'){ hideMultiPlace(); showNewPlace(name); return; }
   const targets = all ? hits : [hits[picked ? +picked.value : 0]];
   await withBusy(async () => {
     for(const v of targets) await logItemAt(v, item);
@@ -1558,6 +1629,20 @@ function showNewPlace(name){
   const loc = document.getElementById('lg_location');
   const cat = document.getElementById('lg_category');
   if(!again){ loc.value = ''; cat.value = ''; }   // keep what was typed for this same place
+  // same name already on the list? then this is a second location of it, or a
+  // different place that happens to share the name — ask, don't assume
+  const kin = brandRows(name);
+  const row = document.getElementById('lg_brandRow');
+  if(kin.length){
+    document.getElementById('lg_brandTxt').textContent =
+      'same brand as the one in ' + kin.map(v => v.location || 'no location').join(', ');
+    document.getElementById('lg_sameBrand').checked = true;
+    row.style.display = '';
+    document.getElementById('lg_newMsg').textContent =
+      'adding another location of "' + name + '"';
+  } else {
+    row.style.display = 'none';
+  }
   attachAutocomplete(loc, locationOptions, { typedOnly: true, next: 'lg_category' });
   attachAutocomplete(cat, categoryOptions, { typedOnly: true });
   document.getElementById('lg_new').style.display = '';
@@ -1574,22 +1659,35 @@ async function addPlaceThenLog(){
   const item = itemIn.value.trim();
   if(!name){ hideNewPlace(); nameIn.focus(); return; }
   if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
-  if(venues.some(x => normTxt(x.name) === normTxt(name))){ hideNewPlace(); await addLogItem(); return; }
   const location = document.getElementById('lg_location').value.trim();
   const category = document.getElementById('lg_category').value.trim();
-  if(venues.some(x => normTxt(x.name) === normTxt(name) && normTxt(x.location||'') === normTxt(location))){
-    alert('"' + name + '" is already on the list' + (location ? ' in ' + location : '') + '.');
+  // this exact branch already exists: log against it instead of making a twin
+  const twin = venues.find(x => normTxt(x.name) === normTxt(name) && normTxt(x.location||'') === normTxt(location));
+  if(twin){
+    hideNewPlace();
+    await withBusy(async () => {
+      await logItemAt(twin, item);
+      await loadAll(); populateCategories(); render();
+      document.getElementById('lg_what').value = '';
+      renderLog();
+    });
     return;
   }
+  const kin = brandRows(name);
+  const sameBrand = kin.length && document.getElementById('lg_sameBrand').checked;
   const rec = { name, category, location, toOrder: '', rating: '', notes: '',
-                hasMenuDetail: 'x', address: '', lat: '', lng: '', geo: '' };
+                hasMenuDetail: 'x', address: '', lat: '', lng: '', geo: '',
+                chain: sameBrand ? 'x' : '' };
+  if(sameBrand) await ensureChainColumn();
   const sec = sectionForItem(item, { name, location });
   await withBusy(async () => {
     await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`,
       { values: [objToRow(rec)] });
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
       { values: [[name, location, '', sec, item]] });
-    await loadAll(); populateCategories(); render();
+    await loadAll();
+    if(sameBrand){ await markChains([name]); await loadAll(); }
+    populateCategories(); render();
     hideNewPlace();
     nameIn.value = name;            // stay on the new place for the next item
     itemIn.value = '';
@@ -1597,6 +1695,12 @@ async function addPlaceThenLog(){
     itemIn.focus();
   });
 }
+document.getElementById('lg_newLoc').addEventListener('click', () => {
+  const nameIn = document.getElementById('lg_venue');
+  const name = nameIn.value.trim();
+  if(!name){ alert('Type the name in "where" first.'); nameIn.focus(); return; }
+  showNewPlace(name);
+});
 document.getElementById('lg_newAdd').addEventListener('click', addPlaceThenLog);
 document.getElementById('lg_newCancel').addEventListener('click', () => {
   hideNewPlace();
@@ -1824,7 +1928,8 @@ function findDataIssues(){
   const falseFlags = venues.filter(v => (v.hasMenuDetail||'').trim() === 'x' && !logged.has(vKey(v)));
   const missingFlags = venues.filter(v => (v.hasMenuDetail||'').trim() !== 'x' && logged.has(vKey(v)));
   const noGeo = venues.filter(v => !v.lat || !v.lng);
-  return { dupes, falseFlags, missingFlags, noGeo };
+  const unchained = unmarkedChainRows();
+  return { dupes, falseFlags, missingFlags, noGeo, unchained };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -1843,11 +1948,16 @@ function renderDiag(){
     line(orphanMenuRows.length, 'Logged items with no matching venue', orphanSample) +
     line(d.falseFlags.length, 'Flagged but nothing logged', sample(d.falseFlags)) +
     line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
-    line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest');
+    line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest') +
+    line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained));
   const btn = document.getElementById('diagFixFlags');
   const n = d.falseFlags.length + d.missingFlags.length;
   btn.textContent = n ? 'Repair ' + n + ' menu flag' + (n===1?'':'s') : 'Menu flags are correct';
   btn.disabled = !n;
+  const cbtn = document.getElementById('diagMarkChains');
+  const c = d.unchained.length;
+  cbtn.textContent = c ? 'Mark ' + c + ' row' + (c===1?'':'s') + ' as chain' : 'Chains are marked';
+  cbtn.disabled = !c;
 }
 function openDiag(){
   renderDiag();
@@ -1859,6 +1969,18 @@ function closeDiag(){
   document.getElementById('diagSheet').classList.remove('open');
 }
 document.getElementById('closeDiag').addEventListener('click', closeDiag);
+document.getElementById('diagMarkChains').addEventListener('click', async () => {
+  await withBusy(async () => {
+    await loadAll();
+    const names = multiLocationNames();
+    const todo = unmarkedChainRows();
+    if(!todo.length){ renderDiag(); return; }
+    if(!confirm('Mark ' + todo.length + ' row' + (todo.length===1?'':'s') +
+                ' across ' + names.length + ' name' + (names.length===1?'':'s') + ' as a chain?')) return;
+    await markChains(names);
+    await loadAll(); populateCategories(); render(); renderDiag();
+  });
+});
 document.getElementById('diagFixFlags').addEventListener('click', async () => {
   await withBusy(async () => {
     await loadAll();
