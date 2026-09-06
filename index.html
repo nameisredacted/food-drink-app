@@ -220,7 +220,9 @@ select.on{color:#111;font-weight:700;}
 #lg_multi .locpick{display:flex;align-items:center;gap:9px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--hair);}
 #lg_multi .locpick:last-child{border-bottom:none;}
 #lg_multi .chainrow,#lg_new .chainrow{display:flex;align-items:center;gap:8px;font-size:13px;color:#666;margin-top:8px;}
-#lg_newLoc{margin-top:10px;font-size:22px;line-height:1;text-decoration:none;padding:2px 6px;}
+#logSheet .hintline{display:flex;align-items:center;gap:10px;margin-top:8px;}
+#lg_newLoc{font-size:22px;line-height:1;text-decoration:none;padding:2px 6px;flex:none;}
+#lg_hint{margin:0;min-width:0;}
 #lg_multi .addline{margin-top:8px;padding-top:0;border-top:none;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
@@ -321,7 +323,10 @@ select.on{color:#111;font-weight:700;}
     <div class="ac-wrap"><input id="lg_what" placeholder="what" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <button id="lg_add" type="button">add</button>
   </div>
-  <span class="bulklink plus" id="lg_newLoc" title="add this place, or another location of it">+</span>
+  <div class="hintline">
+    <span class="bulklink plus" id="lg_newLoc" title="add this place, or another location of it">+</span>
+    <span class="newmsg" id="lg_hint"></span>
+  </div>
   <div id="lg_new" style="display:none;">
     <div class="newmsg" id="lg_newMsg"></div>
     <div class="addline">
@@ -384,7 +389,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-11";
+const APP_VERSION = "2026.09.06-12";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1496,7 +1501,7 @@ async function addLogItem(){
     nameIn.value = v.name;           // stay on the same place for the next item
     itemIn.value = '';
     hideNewPlace(); hideMultiPlace();
-    renderLog();
+    refreshLogHint(); renderLog();
     itemIn.focus();
   });
 }
@@ -1654,7 +1659,7 @@ async function addLogItemMulti(){
     hideMultiPlace();
     document.getElementById('lg_venue').value = name;   // stay on it for the next item
     itemIn.value = '';
-    renderLog();
+    refreshLogHint(); renderLog();
     itemIn.focus();
   });
 }
@@ -1767,12 +1772,23 @@ async function addPlaceThenLog(){
     hideNewPlace();
     nameIn.value = name;            // stay on the new place for the next item
     itemIn.value = '';
-    renderLog();
+    refreshLogHint(); renderLog();
     itemIn.focus();
   });
 }
+/* What tapping + would do, shown while the name is still being typed. */
+function refreshLogHint(){
+  const name = document.getElementById('lg_venue').value.trim();
+  const hint = document.getElementById('lg_hint');
+  if(!name){ hint.textContent = ''; return; }
+  const kin = brandRows(name);
+  hint.textContent = kin.length
+    ? '"' + name + '" is already on the list in ' + kin.map(v => v.location || 'no location').join(', ')
+    : 'nothing called "' + name + '" yet — add it?';
+}
 ['lg_venue','lg_location'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => {
+    if(id === 'lg_venue') refreshLogHint();
     if(document.getElementById('lg_new').style.display === 'none') return;
     const name = document.getElementById('lg_venue').value.trim();
     pendingNewPlace = name;
@@ -1801,8 +1817,10 @@ function openLog(prefillVenue){
   document.getElementById('logSearch').value='';
   document.getElementById('lg_venue').value = prefillVenue || '';
   document.getElementById('lg_what').value = '';
-  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_what', typedOnly: true });
+  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions,
+    { next: 'lg_what', typedOnly: true, onPick: refreshLogHint });
   attachAutocomplete(document.getElementById('lg_what'), whatOptions, { typedOnly: true });
+  refreshLogHint();
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
