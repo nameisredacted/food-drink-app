@@ -214,7 +214,16 @@ select.on{color:#111;font-weight:700;}
 .wantadd button{flex:none;padding:8px 13px;border:1px solid #ddd;background:#fff;
                 color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
-.addline #lg_item{flex:1 1 100%;}
+#logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
+#logSheet .addline .ac-wrap:last-of-type input{width:100%;}
+/* category shown once against the block of items it covers, like a merged cell */
+.log-grp{display:flex;align-items:stretch;gap:11px;border-bottom:1px solid var(--hair);}
+.log-grp:last-child{border-bottom:none;}
+.log-grp .grp-cat{flex:0 0 36%;font-size:12px;color:#999;padding:9px 11px 9px 0;
+                  border-right:1px solid var(--hair);word-break:break-word;}
+.log-grp .grp-items{flex:1;min-width:0;}
+.log-grp .grp-item{font-size:14px;padding:9px 0;cursor:pointer;}
+.log-grp .grp-item + .grp-item{border-top:1px solid var(--hair);}
 </style>
 </head>
 <body>
@@ -290,12 +299,10 @@ select.on{color:#111;font-weight:700;}
 <div class="sheet" id="logSheet">
   <button class="close-x" id="closeLog">&times;</button>
   <h2>ordered</h2>
-  <div class="sub" id="logSub"></div>
-  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search everything ordered..." autocomplete="off"></div>
+  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search..." autocomplete="off"></div>
   <div class="addline">
-    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="Place" autocomplete="off" autocorrect="off" spellcheck="false"></div>
-    <div class="ac-wrap"><input class="sec" id="lg_section" placeholder="Category" autocomplete="off" autocorrect="off" spellcheck="false"></div>
-    <input id="lg_item" placeholder="Item ordered" autocomplete="off">
+    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="Where" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div class="ac-wrap"><input id="lg_what" placeholder="What" autocomplete="off" autocorrect="off" spellcheck="false"></div>
     <button id="lg_add" type="button">add</button>
   </div>
   <div id="logBody"></div>
@@ -343,7 +350,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.05-1";
+const APP_VERSION = "2026.09.05-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1100,13 +1107,21 @@ const SECTIONS = ['Appetizers','Mains','Sandwiches & Burgers','Pizza','Tacos & A
    completion never silently disappears. Inline completion still happens for
    whole-string prefixes only, and only while the caret is at the end. */
 
+/* Options may be plain strings or { value, hint, search } — the second form
+   lets a list be searched by more than the text it inserts. */
+function acNorm(o){
+  if(o && typeof o === 'object')
+    return { value: String(o.value||''), hint: String(o.hint||''), search: String(o.search || o.value || '') };
+  return { value: String(o||''), hint: '', search: String(o||'') };
+}
 function acRank(options, val){
   const q = val.trim().toLowerCase();
-  if(!q) return options.slice(0, 12);
+  const all = options.map(acNorm);
+  if(!q) return all.slice(0, 12);
   const pre = [], word = [], sub = [];
-  for(const o of options){
-    const lo = o.toLowerCase();
-    if(lo === q) continue;
+  for(const o of all){
+    const lo = o.search.toLowerCase();
+    if(o.value.toLowerCase() === q) continue;
     if(lo.startsWith(q)) pre.push(o);
     else if(lo.split(/[^a-z0-9]+/).some(w => w && w.startsWith(q))) word.push(o);
     else if(lo.includes(q)) sub.push(o);
@@ -1134,16 +1149,19 @@ function attachAutocomplete(input, getOptions, opts){
 
   function hide(){ box.classList.remove('open'); box.innerHTML = ''; items = []; sel = -1; }
   function accept(t){
-    input.value = t;
+    const o = acNorm(t);
+    input.value = o.value;
     hide();
-    if(opts.onPick) opts.onPick(t);
+    if(opts.onPick) opts.onPick(o.value, o);
     if(opts.next){ const n = document.getElementById(opts.next); if(n) n.focus(); }
   }
   function show(){
     const all = getOptions() || [];
     items = acRank(all, input.value);
     if(!items.length){ hide(); return; }
-    box.innerHTML = items.map((t,i) => `<div class="ac-opt" data-i="${i}">${escapeHtml(t)}</div>`).join('');
+    box.innerHTML = items.map((o,i) =>
+      `<div class="ac-opt" data-i="${i}">${escapeHtml(o.value)}` +
+      (o.hint ? `<small>${escapeHtml(o.hint)}</small>` : '') + `</div>`).join('');
     box.querySelectorAll('.ac-opt').forEach(el => {
       el.addEventListener('mousedown', ev => { ev.preventDefault(); accept(items[+el.dataset.i]); });
     });
@@ -1184,11 +1202,11 @@ function attachAutocomplete(input, getOptions, opts){
     const val = input.value;
     if(wasSkip || !val) return;
     if(input.selectionStart !== val.length) return;   // caret mid-string: don't fight the user
-    const hit = (getOptions() || []).find(o =>
-      o.toLowerCase().startsWith(val.toLowerCase()) && o.length > val.length);
+    const hit = (getOptions() || []).map(acNorm).find(o =>
+      o.value.toLowerCase().startsWith(val.toLowerCase()) && o.value.length > val.length);
     if(!hit) return;
-    input.value = hit;
-    try{ input.setSelectionRange(val.length, hit.length); }catch(err){}
+    input.value = hit.value;
+    try{ input.setSelectionRange(val.length, hit.value.length); }catch(err){}
   });
 
   input.addEventListener('focus', show);
@@ -1214,6 +1232,36 @@ function categoryOptions(){ return distinctValues(v => v.category).map(x => x.la
 function locationOptions(){ return distinctValues(v => v.location).map(x => x.label); }
 function vendorOptions(){ return distinctValues(r => r.vendor, menuRows).map(x => x.label); }
 function venueNameOptions(){ return distinctValues(v => v.name).map(x => x.label); }
+/* Everything ordered, searchable by its category as well as its own text:
+   typing "apps" surfaces the items filed under Appetizers. */
+function whatOptions(){
+  const byItem = new Map();
+  menuRows.forEach(r => {
+    if(!r.item || r.item === '(no items recorded)') return;
+    const k = normTxt(r.item);
+    if(!byItem.has(k)) byItem.set(k, { value: r.item.trim(), secs: new Map(), venues: new Set() });
+    const e = byItem.get(k);
+    const sec = [r.vendor, r.section].filter(Boolean).join(' — ');
+    if(sec) e.secs.set(sec, (e.secs.get(sec)||0) + 1);
+    if(r.vkey) e.venues.add(r.vkey);
+  });
+  return [...byItem.values()].map(e => {
+    const hint = [...e.secs.entries()].sort((a,b) => b[1]-a[1]).map(x => x[0])[0] || '';
+    return { value: e.value, hint, search: e.value + ' ' + [...e.secs.keys()].join(' ') };
+  }).sort((a,b) => a.value.localeCompare(b.value));
+}
+/* Which category this item has been filed under before — at this place first,
+   then anywhere. Keeps the removed Category box from costing any accuracy. */
+function sectionForItem(item, v){
+  const k = normTxt(item);
+  const pick = rows => {
+    const c = new Map();
+    rows.forEach(r => { const s = (r.section||'').trim(); if(s) c.set(s, (c.get(s)||0)+1); });
+    return [...c.entries()].sort((a,b) => b[1]-a[1]).map(x => x[0])[0] || '';
+  };
+  const here = menuRows.filter(r => normTxt(r.item) === k && v && r.vkey === vKey(v));
+  return pick(here) || pick(menuRows.filter(r => normTxt(r.item) === k)) || 'Other';
+}
 function sectionOptions(){
   const out = [], seen = {};
   const add = s => {
@@ -1323,31 +1371,44 @@ document.getElementById('mp_bulk').addEventListener('click', () => {
 
 /* ====== Global log: everything ever ordered, searchable ====== */
 const logSheet = document.getElementById('logSheet');
+/* The list stays empty until something is typed — 988 rows on open was noise,
+   and the category is printed once per run of items rather than on every line. */
 function renderLog(){
+  const body = document.getElementById('logBody');
   const q = document.getElementById('logSearch').value.trim().toLowerCase();
-  let rows = menuRows.filter(r => r.item && r.item !== '(no items recorded)');
-  if(q) rows = rows.filter(r => (r.venue+' '+r.vendor+' '+r.section+' '+r.item).toLowerCase().includes(q));
-  rows = rows.slice().sort((a,b) => a.venue.localeCompare(b.venue) || a.vendor.localeCompare(b.vendor) || a.section.localeCompare(b.section) || a.item.localeCompare(b.item));
-  const nVenues = new Set(rows.map(r => r.venue)).size;
-  document.getElementById('logSub').textContent = rows.length + ' item' + (rows.length===1?'':'s') + ' · ' + nVenues + ' place' + (nVenues===1?'':'s');
-  let html = ''; let last = null; let shown = 0;
+  if(!q){ body.innerHTML = ''; return; }
+  let rows = menuRows.filter(r => r.item && r.item !== '(no items recorded)')
+    .filter(r => (r.venue+' '+r.vendor+' '+r.section+' '+r.item).toLowerCase().includes(q));
+  rows = rows.slice().sort((a,b) =>
+    a.venue.localeCompare(b.venue) || a.vendor.localeCompare(b.vendor) ||
+    a.section.localeCompare(b.section) || a.item.localeCompare(b.item));
+  if(!rows.length){ body.innerHTML = '<div class="hint-empty">Nothing ordered matches that.</div>'; return; }
+
+  let html = '', lastVenue = null, lastCat = null, open = false, shown = 0, cut = false;
+  const closeGrp = () => { if(open){ html += '</div></div>'; open = false; } };
   for(const r of rows){
-    if(shown >= 500){ html += '<div class="hint-empty">refine the search to see the rest</div>'; break; }
-    if(r.venue !== last){
+    if(shown >= 500){ cut = true; break; }
+    const cat = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
+    if(r.venue !== lastVenue){
+      closeGrp();
       html += `<div class="log-head" data-venue="${escapeHtml(r.venue)}">${escapeHtml(r.venue)}</div>`;
-      last = r.venue;
+      lastVenue = r.venue; lastCat = null;
     }
-    html += `<div class="mp-row logrow" data-venue="${escapeHtml(r.venue)}">
-      <span class="mp-cat">${escapeHtml([r.vendor,r.section].filter(Boolean).join(' — ') || 'Other')}</span>
-      <span class="mp-it">${escapeHtml(r.item)}</span>
-    </div>`;
+    if(cat !== lastCat){
+      closeGrp();
+      html += `<div class="log-grp"><div class="grp-cat">${escapeHtml(cat)}</div><div class="grp-items">`;
+      open = true; lastCat = cat;
+    }
+    html += `<div class="grp-item" data-venue="${escapeHtml(r.venue)}">${escapeHtml(r.item)}</div>`;
     shown++;
   }
-  document.getElementById('logBody').innerHTML = html;
-  document.querySelectorAll('#logBody .logrow, #logBody .log-head').forEach(el => {
+  closeGrp();
+  if(cut) html += '<div class="hint-empty">refine the search to see the rest</div>';
+  body.innerHTML = html;
+  body.querySelectorAll('.grp-item, .log-head').forEach(el => {
     el.addEventListener('click', () => {
       const name = el.dataset.venue;
-      const v = venues.find(x => x.name === name);
+      const v = venues.find(x => normTxt(x.name) === normTxt(name));
       closeLog();
       if(v) openMenuPage(v);
     });
@@ -1356,10 +1417,8 @@ function renderLog(){
 /* add an ordered item from the global log, without hunting for the place first */
 async function addLogItem(){
   const nameIn = document.getElementById('lg_venue');
-  const secIn  = document.getElementById('lg_section');
-  const itemIn = document.getElementById('lg_item');
+  const itemIn = document.getElementById('lg_what');
   const name = nameIn.value.trim();
-  const sec  = secIn.value.trim() || 'Other';
   const item = itemIn.value.trim();
   if(!name){ alert('Which place?'); nameIn.focus(); return; }
   if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
@@ -1371,6 +1430,9 @@ async function addLogItem(){
     nameIn.focus(); return;
   }
   const v = hits[0];
+  // no Category box any more: reuse the category this item was last filed
+  // under at this place, then anywhere, before falling back to Other
+  const sec = sectionForItem(item, v);
   await withBusy(async () => {
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
       { values: [[v.name, v.location||'', '', sec, item]] });
@@ -1390,15 +1452,16 @@ async function addLogItem(){
   });
 }
 document.getElementById('lg_add').addEventListener('click', addLogItem);
-document.getElementById('lg_item').addEventListener('keydown', e => { if(e.key === 'Enter') addLogItem(); });
+document.getElementById('lg_what').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addLogItem();
+});
 
 function openLog(prefillVenue){
   document.getElementById('logSearch').value='';
   document.getElementById('lg_venue').value = prefillVenue || '';
-  document.getElementById('lg_section').value = '';
-  document.getElementById('lg_item').value = '';
-  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_section' });
-  attachAutocomplete(document.getElementById('lg_section'), sectionOptions, { next: 'lg_item' });
+  document.getElementById('lg_what').value = '';
+  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_what' });
+  attachAutocomplete(document.getElementById('lg_what'), whatOptions);
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
