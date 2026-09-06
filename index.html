@@ -354,7 +354,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-3";
+const APP_VERSION = "2026.09.06-4";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1159,6 +1159,8 @@ function attachAutocomplete(input, getOptions, opts){
     if(opts.next){ const n = document.getElementById(opts.next); if(n) n.focus(); }
   }
   function show(){
+    // typedOnly fields stay quiet until there is something to match on
+    if(opts.typedOnly && !input.value.trim()){ hide(); return; }
     const all = getOptions() || [];
     items = acRank(all, input.value);
     if(!items.length){ hide(); return; }
@@ -1477,8 +1479,8 @@ function openLog(prefillVenue){
   document.getElementById('logSearch').value='';
   document.getElementById('lg_venue').value = prefillVenue || '';
   document.getElementById('lg_what').value = '';
-  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_what' });
-  attachAutocomplete(document.getElementById('lg_what'), whatOptions);
+  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_what', typedOnly: true });
+  attachAutocomplete(document.getElementById('lg_what'), whatOptions, { typedOnly: true });
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
