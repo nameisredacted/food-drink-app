@@ -307,6 +307,9 @@ select.on{color:#111;font-weight:700;}
   <div class="btnrow" style="margin-top:14px;">
     <button class="btn ghost" id="diagFixFlags">Repair menu flags</button>
     <button class="btn ghost" id="diagMarkChains">Mark chains</button>
+    <button class="btn ghost" id="diagMergeDupes">Merge duplicates</button>
+    <button class="btn ghost" id="diagFixUmbrellas">Fix chain rows</button>
+    <button class="btn ghost" id="diagAttachStrays">Attach logged items</button>
   </div>
 </div>
 
@@ -384,7 +387,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-8";
+const APP_VERSION = "2026.09.06-9";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1550,6 +1553,55 @@ function unmarkedChainRows(){
   return venues.filter(v => multi.has(normTxt(v.name)) && !isChain(v));
 }
 
+/* ====== Repairs the data check can run ======
+   Three problems the sheet has picked up over time: the same place entered
+   twice, chains filed under a made-up location ("Multiple Locations", "Local
+   Chain"), and logged items whose Location text does not match the row they
+   belong to. Each repair is offered with a count and a confirm, never on its
+   own initiative. */
+const PSEUDO_LOCATIONS = ['multiple locations','local chain','national chain','international chain','chain'];
+function isPseudoLocation(loc){ return PSEUDO_LOCATIONS.indexOf(normTxt(loc)) >= 0; }
+function chainUmbrellaRows(){ return venues.filter(v => isPseudoLocation(v.location)); }
+
+function duplicateGroups(){
+  const by = new Map();
+  venues.forEach(v => { const k = vKey(v); if(!by.has(k)) by.set(k, []); by.get(k).push(v); });
+  return [...by.values()].filter(g => g.length > 1);
+}
+/* Keep the lowest row and fold the others into it: first non-empty wins per
+   field, To Order is the union with the shorter of two overlapping notes
+   dropped ("agua fresca" inside "agua fresca mango"). */
+function mergeDupes(group){
+  const parts = t => String(t||'').split(/[;,]/).map(x => x.trim()).filter(Boolean);
+  const out = Object.assign({}, group[0]);
+  let want = parts(out.toOrder);
+  group.slice(1).forEach(v => {
+    COLS.forEach(c => {
+      if(c === 'toOrder') return;
+      if(!String(out[c]||'').trim() && String(v[c]||'').trim()) out[c] = v[c];
+    });
+    parts(v.toOrder).forEach(p => { if(!want.some(x => normTxt(x) === normTxt(p))) want.push(p); });
+    if(normTxt(v.hasMenuDetail) === 'x') out.hasMenuDetail = 'x';
+    if(isChain(v)) out.chain = 'x';
+  });
+  want = want.filter((p,i) => !want.some((q,j) =>
+    j !== i && normTxt(q).length > normTxt(p).length && normTxt(q).indexOf(normTxt(p)) >= 0));
+  out.toOrder = want.join('; ');
+  return out;
+}
+/* Logged rows pointing at no venue, but whose name matches exactly one row:
+   the item is real, only its Location text is stale. */
+function strayLogRows(){
+  const out = [];
+  menuRows.forEach(r => {
+    if(!r.item || r.item === '(no items recorded)') return;
+    if(venues.some(v => vKey(v) === venueKey(r.venue, r.location))) return;
+    const byName = venues.filter(v => normTxt(v.name) === normTxt(r.venue));
+    if(byName.length === 1) out.push({ row: r, to: byName[0] });
+  });
+  return out;
+}
+
 /* One item, one place: the row, plus the tab-1 flag if this is its first. */
 async function logItemAt(v, item){
   // no Category box any more: reuse the category this item was last filed
@@ -1929,7 +1981,10 @@ function findDataIssues(){
   const missingFlags = venues.filter(v => (v.hasMenuDetail||'').trim() !== 'x' && logged.has(vKey(v)));
   const noGeo = venues.filter(v => !v.lat || !v.lng);
   const unchained = unmarkedChainRows();
-  return { dupes, falseFlags, missingFlags, noGeo, unchained };
+  const dupeGroups = duplicateGroups();
+  const umbrellas = chainUmbrellaRows();
+  const strays = strayLogRows();
+  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -1944,8 +1999,11 @@ function renderDiag(){
   document.getElementById('diagSub').textContent =
     venues.length + ' venues, ' + menuRows.length + ' logged items';
   document.getElementById('diagBody').innerHTML =
-    line(d.dupes.length, 'Identical duplicate rows', d.dupes.length ? 'edits to these are blocked until one is removed' : '') +
-    line(orphanMenuRows.length, 'Logged items with no matching venue', orphanSample) +
+    line(d.dupes.length, 'Identical duplicate rows', d.dupes.length ? 'merging keeps the first row and folds the rest into it' : '') +
+    line(orphanMenuRows.length, 'Logged items with no matching venue',
+         d.strays.length ? d.strays.length + ' of them name a place that is on the list' : orphanSample) +
+    line(d.umbrellas.length, 'Chains filed under a made-up location',
+         d.umbrellas.length ? [...new Set(d.umbrellas.map(v => v.location))].join(', ') : '') +
     line(d.falseFlags.length, 'Flagged but nothing logged', sample(d.falseFlags)) +
     line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
     line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest') +
@@ -1958,6 +2016,18 @@ function renderDiag(){
   const c = d.unchained.length;
   cbtn.textContent = c ? 'Mark ' + c + ' row' + (c===1?'':'s') + ' as chain' : 'Chains are marked';
   cbtn.disabled = !c;
+  const dbtn = document.getElementById('diagMergeDupes');
+  const g = d.dupeGroups.length;
+  dbtn.textContent = g ? 'Merge ' + g + ' duplicate' + (g===1?'':'s') : 'No duplicates';
+  dbtn.disabled = !g;
+  const ubtn = document.getElementById('diagFixUmbrellas');
+  const u = d.umbrellas.length;
+  ubtn.textContent = u ? 'Fix ' + u + ' chain row' + (u===1?'':'s') : 'Chain rows are clean';
+  ubtn.disabled = !u;
+  const sbtn = document.getElementById('diagAttachStrays');
+  const st = d.strays.length;
+  sbtn.textContent = st ? 'Attach ' + st + ' logged item' + (st===1?'':'s') : 'Logged items are attached';
+  sbtn.disabled = !st;
 }
 function openDiag(){
   renderDiag();
@@ -1969,6 +2039,71 @@ function closeDiag(){
   document.getElementById('diagSheet').classList.remove('open');
 }
 document.getElementById('closeDiag').addEventListener('click', closeDiag);
+const mainRow = i => `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${i})`;
+const menuRow = i => `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${i})`;
+
+document.getElementById('diagMergeDupes').addEventListener('click', async () => {
+  await withBusy(async () => {
+    await loadAll();
+    const groups = duplicateGroups();
+    if(!groups.length){ renderDiag(); return; }
+    const extra = groups.reduce((n,g) => n + g.length - 1, 0);
+    if(!confirm('Merge ' + groups.length + ' duplicate place' + (groups.length===1?'':'s') +
+                ' and remove ' + extra + ' row' + (extra===1?'':'s') + '?')) return;
+    const drop = [];
+    for(const g of groups){
+      const rows = g.slice().sort((a,b) => a.index - b.index);
+      const keep = rows[0];
+      const rec = mergeDupes(rows);
+      delete rec.index;
+      await graph('PATCH', mainRow(keep.index), { values: [objToRow(rec)] });
+      rows.slice(1).forEach(v => drop.push(v.index));
+    }
+    // highest index first, so the earlier ones do not shift under us
+    for(const i of drop.sort((a,b) => b - a)) await deleteTableRow(MAIN_SHEET, MAIN_TABLE, i);
+    await loadAll(); populateCategories(); render(); renderDiag();
+  });
+});
+
+document.getElementById('diagFixUmbrellas').addEventListener('click', async () => {
+  await withBusy(async () => {
+    await loadAll();
+    const rows = chainUmbrellaRows();
+    if(!rows.length){ renderDiag(); return; }
+    if(!confirm('Mark ' + rows.length + ' row' + (rows.length===1?'':'s') +
+                ' as a chain and clear the made-up location?')) return;
+    if(!await ensureChainColumn()) return;
+    const taken = new Set(venues.filter(v => !isPseudoLocation(v.location)).map(vKey));
+    const skipped = [];
+    for(const v of rows){
+      const key = venueKey(v.name, '');
+      if(taken.has(key)){ skipped.push(v.name + ' (' + v.location + ')'); continue; }
+      taken.add(key);
+      const rec = Object.assign({}, v, { chain: 'x', location: '' });
+      delete rec.index;
+      await graph('PATCH', mainRow(v.index), { values: [objToRow(rec)] });
+      // the items logged against the old label follow the row
+      for(const r of menuRows.filter(r => normTxt(r.venue) === normTxt(v.name) && isPseudoLocation(r.location)))
+        await graph('PATCH', menuRow(r.index), { values: [[r.venue, '', r.vendor, r.section, r.item]] });
+    }
+    await loadAll(); populateCategories(); render(); renderDiag();
+    if(skipped.length) alert('Left alone, a row with no location already exists for: ' + skipped.join('; '));
+  });
+});
+
+document.getElementById('diagAttachStrays').addEventListener('click', async () => {
+  await withBusy(async () => {
+    await loadAll();
+    const strays = strayLogRows();
+    if(!strays.length){ renderDiag(); return; }
+    if(!confirm('Point ' + strays.length + ' logged item' + (strays.length===1?'':'s') +
+                ' at the place already on the list?')) return;
+    for(const { row, to } of strays)
+      await graph('PATCH', menuRow(row.index), { values: [[to.name, to.location||'', row.vendor, row.section, row.item]] });
+    await loadAll(); populateCategories(); render(); renderDiag();
+  });
+});
+
 document.getElementById('diagMarkChains').addEventListener('click', async () => {
   await withBusy(async () => {
     await loadAll();
