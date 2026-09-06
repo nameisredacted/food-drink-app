@@ -214,6 +214,9 @@ select.on{color:#111;font-weight:700;}
 .wantadd button{flex:none;padding:8px 13px;border:1px solid #ddd;background:#fff;
                 color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
 #logSheet{min-height:62vh;}
+#lg_new .newmsg{font-size:12px;color:#999;margin-top:12px;}
+#lg_new .addline{margin-top:6px;padding-top:0;border-top:none;}
+#lg_newCancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
 #logSheet .addline .ac-wrap:last-of-type input{width:100%;}
@@ -309,6 +312,15 @@ select.on{color:#111;font-weight:700;}
     <div class="ac-wrap"><input id="lg_what" placeholder="what" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <button id="lg_add" type="button">add</button>
   </div>
+  <div id="lg_new" style="display:none;">
+    <div class="newmsg" id="lg_newMsg"></div>
+    <div class="addline">
+      <div class="ac-wrap"><input class="sec" id="lg_location" placeholder="location" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+      <div class="ac-wrap"><input class="sec" id="lg_category" placeholder="cuisine (optional)" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+      <button id="lg_newAdd" type="button">add place</button>
+      <button id="lg_newCancel" type="button">cancel</button>
+    </div>
+  </div>
   <div id="logBody"></div>
 </div>
 
@@ -354,7 +366,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-4";
+const APP_VERSION = "2026.09.06-5";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1442,7 +1454,7 @@ async function addLogItem(){
   if(!name){ alert('Which place?'); nameIn.focus(); return; }
   if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
   const hits = venues.filter(x => normTxt(x.name) === normTxt(name));
-  if(!hits.length){ alert('No place called "' + name + '" yet — add it with + first.'); nameIn.focus(); return; }
+  if(!hits.length){ showNewPlace(name); return; }
   if(hits.length > 1){
     const where = hits.map(x => x.location || 'no location').join(', ');
     alert('More than one place is called "' + name + '" (' + where + '). Open the right one from the list and log it there.');
@@ -1466,16 +1478,79 @@ async function addLogItem(){
     await loadAll(); populateCategories(); render();
     nameIn.value = v.name;           // stay on the same place for the next item
     itemIn.value = '';
+    hideNewPlace();
     renderLog();
     itemIn.focus();
   });
 }
+
+/* ====== New place, straight from the ordered screen ======
+   Typing a place that isn't on the list yet used to be a dead end ("add it
+   with + first"). Now it asks for the two fields the list is sorted and
+   filtered by — location, and cuisine if it is worth saying — and writes the
+   place and the item together. */
+let pendingNewPlace = null;
+function showNewPlace(name){
+  pendingNewPlace = name;
+  document.getElementById('lg_newMsg').textContent = 'nothing called "' + name + '" yet — add it?';
+  const loc = document.getElementById('lg_location');
+  const cat = document.getElementById('lg_category');
+  loc.value = ''; cat.value = '';
+  attachAutocomplete(loc, locationOptions, { typedOnly: true, next: 'lg_category' });
+  attachAutocomplete(cat, categoryOptions, { typedOnly: true });
+  document.getElementById('lg_new').style.display = '';
+  loc.focus();
+}
+function hideNewPlace(){
+  pendingNewPlace = null;
+  document.getElementById('lg_new').style.display = 'none';
+}
+async function addPlaceThenLog(){
+  const nameIn = document.getElementById('lg_venue');
+  const itemIn = document.getElementById('lg_what');
+  const name = (pendingNewPlace || nameIn.value).trim();
+  const item = itemIn.value.trim();
+  if(!name){ hideNewPlace(); nameIn.focus(); return; }
+  if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
+  const location = document.getElementById('lg_location').value.trim();
+  const category = document.getElementById('lg_category').value.trim();
+  if(venues.some(x => normTxt(x.name) === normTxt(name) && normTxt(x.location||'') === normTxt(location))){
+    alert('"' + name + '" is already on the list' + (location ? ' in ' + location : '') + '.');
+    return;
+  }
+  const rec = { name, category, location, toOrder: '', rating: '', notes: '',
+                hasMenuDetail: 'x', address: '', lat: '', lng: '', geo: '' };
+  const sec = sectionForItem(item, { name, location });
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`,
+      { values: [objToRow(rec)] });
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: [[name, location, '', sec, item]] });
+    await loadAll(); populateCategories(); render();
+    hideNewPlace();
+    nameIn.value = name;            // stay on the new place for the next item
+    itemIn.value = '';
+    renderLog();
+    itemIn.focus();
+  });
+}
+document.getElementById('lg_newAdd').addEventListener('click', addPlaceThenLog);
+document.getElementById('lg_newCancel').addEventListener('click', () => {
+  hideNewPlace();
+  document.getElementById('lg_venue').focus();
+});
+['lg_location','lg_category'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addPlaceThenLog();
+  });
+});
 document.getElementById('lg_add').addEventListener('click', addLogItem);
 document.getElementById('lg_what').addEventListener('keydown', e => {
   if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addLogItem();
 });
 
 function openLog(prefillVenue){
+  hideNewPlace();
   document.getElementById('logSearch').value='';
   document.getElementById('lg_venue').value = prefillVenue || '';
   document.getElementById('lg_what').value = '';
@@ -1485,7 +1560,7 @@ function openLog(prefillVenue){
   overlay.classList.add('open');
   logSheet.classList.add('open');
 }
-function closeLog(){ overlay.classList.remove('open'); logSheet.classList.remove('open'); }
+function closeLog(){ hideNewPlace(); overlay.classList.remove('open'); logSheet.classList.remove('open'); }
 document.getElementById('logLink').addEventListener('click', () => openLog());
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
