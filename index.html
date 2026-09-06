@@ -236,6 +236,9 @@ select.on{color:#111;font-weight:700;}
 #lg_newLoc svg{display:block;overflow:visible;}
 #lg_newLoc svg line{stroke:var(--accent);stroke-width:2;stroke-linecap:round;}
 #lg_hint{display:inline;vertical-align:middle;margin:0;line-height:1.35;text-indent:0;}
+/* confirm sits under the fields, no box around it, set at the size of the + */
+#lg_newAdd.confirm{display:block;margin-top:10px;padding:0;background:none;border:none;
+                   color:var(--accent);font-size:20px;line-height:20px;cursor:pointer;}
 #lg_multi .addline{margin-top:8px;padding-top:0;border-top:none;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
@@ -334,20 +337,18 @@ select.on{color:#111;font-weight:700;}
   <div class="addline">
     <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="where" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <div class="ac-wrap"><input id="lg_what" placeholder="what" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-    <button id="lg_add" type="button">add</button>
   </div>
   <div class="hintline">
     <span class="bulklink plus" id="lg_newLoc" title="add this place, or another location of it" role="button" aria-label="add place"><svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><line x1="10" y1="3.5" x2="10" y2="16.5"/><line x1="3.5" y1="10" x2="16.5" y2="10"/></svg></span>
     <span class="newmsg" id="lg_hint"></span>
   </div>
   <div id="lg_new" style="display:none;">
-    <div class="newmsg" id="lg_newMsg"></div>
     <div class="addline">
       <div class="ac-wrap"><input class="sec" id="lg_location" placeholder="location" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       <div class="ac-wrap"><input class="sec" id="lg_category" placeholder="cuisine (optional)" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
-      <button id="lg_newAdd" type="button">add place</button>
     </div>
     <label class="chainrow" id="lg_brandRow" style="display:none;"><input type="checkbox" id="lg_sameBrand" checked> <span id="lg_brandTxt"></span></label>
+    <button id="lg_newAdd" class="confirm" type="button">confirm</button>
   </div>
   <div id="lg_multi" style="display:none;">
     <div class="newmsg" id="lg_multiMsg"></div>
@@ -402,7 +403,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-17";
+const APP_VERSION = "2026.09.06-18";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1688,14 +1689,14 @@ let pendingNewPlace = null;
    rewritten on every keystroke in either "where" or the location box. Three
    states: a name nobody has, a branch already on the list, and a new branch of
    a name that is. The brand question only belongs to the third. */
-function describeNewPlace(name, location){
+function describeNewPlace(name, location){   // writes the line beside the plus
   const kin = brandRows(name);
   const loc = location !== undefined
     ? location
     : document.getElementById('lg_location').value;
   const branch = kin.find(v => normTxt(v.location || '') === normTxt(loc || ''));
   const where = kin.map(v => v.location || 'no location').join(', ');
-  const msg = document.getElementById('lg_newMsg');
+  const msg = document.getElementById('lg_hint');
   const row = document.getElementById('lg_brandRow');
   if(!kin.length){
     msg.textContent = 'nothing called ' + name + ' yet — add it?';
@@ -1733,6 +1734,7 @@ function showNewPlace(name){
 function hideNewPlace(){
   pendingNewPlace = null;
   document.getElementById('lg_new').style.display = 'none';
+  refreshLogHint();   // back to the plain line once the fields are gone
 }
 async function addPlaceThenLog(){
   const nameIn = document.getElementById('lg_venue');
@@ -1801,11 +1803,11 @@ function refreshLogHint(){
     : 'nothing called ' + name + ' yet — add it?';
 }
 function refreshLogCopy(){
-  refreshLogHint();
-  if(document.getElementById('lg_new').style.display === 'none') return;
+  const open = document.getElementById('lg_new').style.display !== 'none';
   const name = document.getElementById('lg_venue').value.trim();
+  if(!open || !name){ refreshLogHint(); return; }
   pendingNewPlace = name;
-  if(name) describeNewPlace(name);
+  describeNewPlace(name);   // same line, narrowed by the location box
 }
 ['lg_venue','lg_location'].forEach(id => {
   const el = document.getElementById(id);
@@ -1826,7 +1828,6 @@ document.getElementById('lg_newAdd').addEventListener('click', addPlaceThenLog);
     if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addPlaceThenLog();
   });
 });
-document.getElementById('lg_add').addEventListener('click', addLogItem);
 document.getElementById('lg_what').addEventListener('keydown', e => {
   if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addLogItem();
 });
