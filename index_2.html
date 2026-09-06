@@ -1,0 +1,1759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>eat + drink</title>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
+<style>
+  :root{
+    --bg:#ffffff; --card:#ffffff; --card2:#f4f4f2; --text:#000000; --muted:#666666;
+    --accent:#0000cc; --good:#0a7a24; --bad:#cc0000; --maybe:#666666; --border:#cccccc;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);}
+  header{position:sticky;top:0;background:var(--bg);padding:12px 14px 8px;z-index:10;border-bottom:1px solid var(--border);}
+  h1{font-size:18px;margin:0 0 10px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .searchrow{position:relative;}
+  .clearx{position:absolute;top:50%;right:8px;transform:translateY(-50%);background:none;border:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:2px 6px;}
+  .search{width:100%;padding-right:34px !important;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:15px;}
+  .row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;}
+  select, .chip{font-size:13px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);}
+  .chip{cursor:pointer;user-select:none;}
+  .chip.active{background:var(--accent);color:#1a1208;border-color:var(--accent);}
+  .count{font-size:12px;color:var(--muted);margin-top:6px;}
+  .hint-empty{color:var(--muted);font-size:14px;padding:18px 2px;}
+  main{padding:10px 14px 90px;}
+  .item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;}
+  .item-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .item-name{font-size:15px;font-weight:600;}
+  .badge{font-size:12px;border-radius:6px;padding:2px 7px;flex-shrink:0;font-weight:600;}
+  .badge.y{background:rgba(95,184,120,.18);color:var(--good);}
+  .badge.n{background:rgba(224,98,95,.18);color:var(--bad);}
+  .badge.dash{background:rgba(154,163,175,.18);color:var(--maybe);}
+  .item-sub{font-size:13px;color:var(--muted);margin-top:3px;}
+  .toorder{margin-top:5px;font-size:12px;color:var(--text);}
+  .tolabel{color:var(--muted);}
+  .more{display:block;width:100%;padding:12px;text-align:center;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+  .fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a1208;font-size:28px;display:flex;align-items:center;justify-content:center;border:none;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:20;}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:none;}
+  .overlay.open{display:block;}
+  .sheet{position:fixed;left:0;right:0;bottom:0;max-height:90vh;overflow-y:auto;background:var(--card);border-radius:16px 16px 0 0;padding:20px 19px 22px;z-index:31;transform:translateY(100%);transition:transform .2s ease;font-size:14px;}
+  .sheet.open{transform:translateY(0);}
+  .sheet h2{margin:0 0 5px;font-size:21px;line-height:1.25;}
+  .sheet .sub{color:var(--muted);font-size:14px;margin-bottom:12px;}
+  .field{margin-bottom:15px;}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .field input, .field select, .field textarea{width:100%;padding:10px 11px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;font-family:inherit;}
+  .field textarea{min-height:60px;resize:vertical;}
+  .field .locked{padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:#16181d;color:var(--muted);font-size:14px;min-height:18px;}
+  .field .hint{font-size:11px;color:var(--muted);margin-top:4px;}
+  .menu-group{margin-top:10px;}
+  .menu-group h4{margin:0 0 2px;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.03em;}
+  .menu-group p{margin:0;font-size:14px;}
+  .btnrow{display:flex;gap:8px;margin-top:14px;}
+  .btn{flex:1;padding:12px;border-radius:9px;border:none;font-size:14px;font-weight:600;cursor:pointer;}
+  .btn.primary{background:var(--accent);color:#1a1208;}
+  .btn.ghost{background:var(--card2);color:var(--text);border:1px solid var(--border);}
+  .btn.danger{background:rgba(224,98,95,.18);color:var(--bad);border:1px solid var(--bad);}
+  .back-link{background:none;border:none;color:var(--accent);font-size:14px;cursor:pointer;padding:0;margin-bottom:8px;display:inline-flex;align-items:center;gap:4px;}
+  .close-x{position:absolute;top:14px;right:14px;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
+  ::placeholder{color:var(--muted);}
+  .gate{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;}
+  .gate h2{margin-bottom:8px;}
+  .gate p{color:var(--muted);font-size:14px;max-width:320px;margin-bottom:20px;}
+  .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .errbox{background:rgba(224,98,95,.12);border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px;font-size:13px;margin-top:12px;max-width:340px;word-break:break-word;}
+  .ver{font-size:10px;color:var(--muted);margin:-6px 0 6px;letter-spacing:.03em;}
+  .ver a{color:var(--accent);text-decoration:underline;cursor:pointer;}
+  .chip.near{background:#2b4c7a;color:#dce8f7;border-color:#3a6296;font-weight:600;}
+  .dist{color:var(--accent);font-size:12px;margin-left:6px;}
+  .chip.dice{background:var(--accent);color:#1a1208;border-color:var(--accent);font-weight:600;}
+  .chip.dice:active{opacity:.75;}
+  .pickfrom{font-size:11px;color:var(--muted);margin-top:2px;}
+  .rateRow{display:flex;gap:6px;margin:2px 0 12px;}
+  .rateBtn{flex:1;padding:11px 0;text-align:center;border-radius:9px;border:1px solid var(--border);background:var(--card2);color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;}
+  .rateBtn.on{box-shadow:inset 0 0 0 1px currentColor;}
+  .rateBtn.on.y{background:rgba(95,184,120,.22);border-color:var(--good);color:var(--good);}
+  .rateBtn.on.d{background:rgba(154,163,175,.22);border-color:var(--maybe);color:var(--text);}
+  .rateBtn.on.n{background:rgba(224,98,95,.22);border-color:var(--bad);color:var(--bad);}
+  .flag{font-size:12px;flex-shrink:0;margin-left:2px;}
+  .flag.ok{color:var(--muted);}
+  .flag.warn{color:var(--accent);}
+  .mp-row{display:flex;align-items:baseline;gap:11px;padding:9px 0;border-bottom:1px solid var(--border);}
+  .mp-row:last-child{border-bottom:none;}
+  .mp-cat{flex:0 0 36%;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;word-break:break-word;}
+  .mp-it{flex:1;font-size:14px;min-width:0;}
+  .mp-row button{background:none;border:none;color:var(--bad);font-size:17px;cursor:pointer;padding:0 4px;flex:none;line-height:1;}
+  .mp-head{display:flex;gap:10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--border);}
+  .mp-head span:first-child{flex:0 0 36%;}
+  .mp-head span:nth-child(2){flex:1;}
+  .sugwrap{position:relative;}
+  .suggest{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none;}
+  .suggest.open{display:block;}
+  .sug{padding:9px 12px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .sug:last-child{border-bottom:none;}
+  .sug.sel{background:var(--card2);}
+  .sug small{display:block;color:var(--muted);font-size:11px;margin-top:1px;}
+  .mp-sec{margin-top:14px;}
+  .mp-sec h4{margin:0 0 4px;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;}
+  .mp-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;}
+  .mp-item:last-child{border-bottom:none;}
+  .mp-item button{background:none;border:none;color:var(--bad);font-size:16px;cursor:pointer;padding:2px 6px;flex:none;}
+  .addline{display:flex;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
+  .addline input{flex:1;min-width:0;padding:10px 11px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;}
+  .addline input.sec{flex:0 0 34%;}
+  .addline button{flex:none;padding:9px 14px;border-radius:8px;border:none;background:var(--accent);color:#1a1208;font-weight:600;font-size:14px;cursor:pointer;}
+  .bulklink{display:block;margin-top:10px;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;}
+  .refresh{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;margin-left:auto;}
+  .menurow{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
+  .menurow input.mkey{flex:0 0 38%;}
+  .menurow input.mval{flex:1;}
+  .menurow button.rm{flex:none;background:none;border:none;color:var(--bad);font-size:18px;cursor:pointer;padding:4px 6px;}
+  .addRowBtn{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px;cursor:pointer;margin-top:4px;}
+  .wantrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);}
+  .wantrow:last-child{border-bottom:none;}
+  .wantrow .ate{font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card2);color:var(--accent);cursor:pointer;}
+/* ===== minimal (2026.08.09) =====
+   One family, one accent, hairlines only. Color carries meaning
+   (blue = tappable, green/red = verdict); everything else is type. */
+:root{ --accent:#1a4fd6; --hair:#ececec; }
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+     -webkit-font-smoothing:antialiased;font-size:15px;color:#111;}
+.search, select, .chip, .item, .more, .btn, .sheet, .field input, .field select,
+.field textarea, .field .locked, .fab, .rateBtn{border-radius:0 !important;box-shadow:none !important;}
+
+/* header */
+header{position:sticky;border-bottom:1px solid var(--hair);padding:14px 16px 10px;}
+h1{margin:0 0 10px;font-size:15px;font-weight:700;letter-spacing:.01em;color:#111;}
+.loglink{font-weight:400;font-size:13px;color:var(--accent);cursor:pointer;margin-left:10px;}
+.ver{position:absolute;top:12px;right:16px;font-size:10px;color:#bbb;margin:0;letter-spacing:.02em;}
+.ver a{color:var(--accent);text-decoration:none;}
+.search{background:#fff;border:none;border-bottom:1px solid #ddd;padding:8px 30px 8px 0;font-size:16px;}
+.search:focus{outline:none;border-bottom-color:#111;}
+.clearx{right:0;color:#bbb;}
+
+/* filters: quiet text, black when on */
+select{background:#fff;border:none;color:var(--accent);padding:6px 2px;font-size:13px;-webkit-appearance:none;appearance:none;}
+.chip{background:none;border:none;color:var(--accent);padding:6px 8px;font-size:13px;}
+.chip.active{color:#111;font-weight:700;}
+.chip.near, .chip.dice{background:none;border:none;color:var(--accent);font-weight:400;}
+.chip.near.active, .chip.dice.active{color:#111;font-weight:700;}
+.count{color:#aaa;font-size:12px;}
+
+/* list: type does the work */
+main{padding:2px 16px 90px;}
+.item{background:none;border:none;border-bottom:1px solid var(--hair);padding:11px 0;margin:0;}
+.item-name{color:var(--accent);font-weight:400;font-size:15px;}
+.item-sub{font-size:12px;color:#999;margin-top:2px;}
+.badge{background:none !important;border-radius:0;font-weight:600;font-size:12px;padding:2px 0;}
+.badge.y{color:var(--good);} .badge.n{color:var(--bad);} .badge.dash{color:#c0c0c0;}
+.more{background:none;border:none;color:var(--accent);text-decoration:none;padding:14px;}
+
+/* the one floating action */
+.fab{background:#fff;color:var(--accent);width:auto;height:auto;padding:8px 14px;
+     font-size:14px;border:1px solid #ddd;}
+
+/* sheets */
+.overlay{background:rgba(0,0,0,.18);}
+.sheet{border-top:1px solid #ddd;}
+.sheet h2{font-size:17px;font-weight:700;}
+.btn{font-weight:400;}
+.btn.primary{background:#111;color:#fff;border:1px solid #111;}
+.btn.ghost{background:none;color:var(--accent);border:1px solid var(--hair);}
+.btn.danger{background:none;color:var(--bad);border:1px solid var(--hair);}
+.rateBtn{background:none;border:1px solid var(--hair);color:#bbb;font-weight:400;}
+.rateBtn.on{font-weight:700;box-shadow:none;}
+.rateBtn.on.y{background:none;border-color:var(--good);}
+.rateBtn.on.d{background:none;border-color:#999;color:#555;}
+.rateBtn.on.n{background:none;border-color:var(--bad);}
+.field .locked{background:#fafafa;color:#666;border-color:var(--hair);}
+.field input, .field select, .field textarea{background:#fff;border:1px solid #ddd;}
+.menu-group h4{color:#111;text-transform:none;letter-spacing:0;font-weight:700;}
+
+/* ordered/log page: vendor > category > item */
+.mp-vend{font-weight:700;font-size:13px;color:#111;margin:14px 0 2px;}
+.mp-cat{color:#999;text-transform:none;letter-spacing:0;font-size:12px;}
+.mp-row{border-bottom:1px solid var(--hair);cursor:pointer;}
+.log-venue{color:#999;font-size:12px;}
+.log-head{font-weight:700;font-size:14px;color:#111;margin:16px 0 2px;cursor:pointer;}
+#mp_cancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
+.addline{flex-wrap:wrap;border-top-color:var(--hair);}
+.addline input{background:#fff;border:1px solid #ddd;border-radius:0;}
+.addline input.sec{flex:1 1 38%;}
+.addline #mp_item{flex:1 1 100%;}
+.addline button{background:#fff;color:var(--accent);border:1px solid #ddd;border-radius:0;font-weight:400;}
+.bulklink{color:var(--accent);text-decoration:none;}
+
+/* ===== 2026.08.15: autocomplete, quick-pick, inline adds ===== */
+.ac-wrap{position:relative;}
+.ac-wrap input{width:100%;}
+.ac-box{position:absolute;left:0;right:0;top:100%;margin-top:2px;background:#fff;
+        border:1px solid #ddd;max-height:200px;overflow-y:auto;z-index:60;display:none;
+        box-shadow:0 6px 18px rgba(0,0,0,.10);}
+.ac-box.open{display:block;}
+.ac-box.up{top:auto;bottom:100%;margin:0 0 2px;}
+.ac-opt{padding:9px 11px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--hair);}
+.ac-opt:last-child{border-bottom:none;}
+.ac-opt.sel{background:#f4f4f2;}
+.ac-opt small{color:#999;font-size:11px;margin-left:6px;}
+.addline .ac-wrap{flex:1 1 38%;min-width:0;}
+.menurow .ac-wrap{flex:0 0 38%;min-width:0;}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
+.quick button{background:none;border:1px solid var(--hair);color:var(--accent);
+              font-size:12px;padding:4px 9px;cursor:pointer;border-radius:0;}
+.quick button.on{color:#111;font-weight:700;border-color:#999;}
+select.on{color:#111;font-weight:700;}
+.wantadd{display:flex;gap:6px;margin-top:8px;}
+.wantadd input{flex:1;min-width:0;padding:8px 10px;border:1px solid #ddd;background:#fff;
+               color:var(--text);font-size:14px;border-radius:0;}
+.wantadd button{flex:none;padding:8px 13px;border:1px solid #ddd;background:#fff;
+                color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
+#logSheet .addline{margin-top:10px;padding-top:10px;}
+#logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
+#logSheet .addline .ac-wrap:last-of-type input{width:100%;}
+/* category shown once against the block of items it covers, like a merged cell */
+.log-grp{display:flex;align-items:stretch;gap:11px;border-bottom:1px solid var(--hair);}
+.log-grp:last-child{border-bottom:none;}
+.log-grp .grp-cat{flex:0 0 36%;font-size:12px;color:#999;padding:9px 11px 9px 0;
+                  border-right:1px solid var(--hair);word-break:break-word;}
+.log-grp .grp-items{flex:1;min-width:0;}
+.log-grp .grp-item{font-size:14px;padding:9px 0;cursor:pointer;}
+.log-grp .grp-item + .grp-item{border-top:1px solid var(--hair);}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate">
+  <div id="gateInner">
+    <h2>eat + drink</h2>
+    <p>Sign in with the Microsoft account connected to your OneDrive to load your live list.</p>
+    <button class="btn primary" id="signInBtn" style="flex:none;padding:12px 24px;">Sign in with Microsoft</button>
+  </div>
+</div>
+
+<header style="display:none;" id="appHeader">
+  <h1>eat + drink <a class="loglink" id="logLink">ordered</a></h1>
+  <div class="ver" id="verLine"></div>
+  <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
+  <div class="sugwrap">
+    <div class="searchrow">
+      <input class="search" id="searchBox" placeholder="Search..." autocomplete="off">
+      <button class="clearx" id="clearAllBtn" type="button" title="clear all">&times;</button>
+    </div>
+    <div class="suggest" id="suggestBox"></div>
+  </div>
+  <div class="row">
+    <select id="categorySelect"><option value="">All categories</option></select>
+    <div class="chip" id="catClear" style="display:none;">&times; all</div>
+    <div class="chip" data-rating="y">y</div>
+    <div class="chip" data-rating="-">-</div>
+    <div class="chip" data-rating="n">n</div>
+    <div class="chip near" id="nearChip">nearest</div>
+    <div class="chip dice" id="diceChip">pick one</div>
+  </div>
+  <div class="count" id="resultCount"></div>
+  <div class="count" id="geoNote" style="display:none;">* approximate (ZIP-level) — refines as you use it</div>
+</header>
+
+<main id="list"></main>
+
+<button class="fab" id="addBtn" style="display:none;">+</button>
+
+<div class="overlay" id="overlay"></div>
+<div class="sheet" id="detailSheet">
+  <button class="close-x" id="closeDetail">&times;</button>
+  <div id="detailContent"></div>
+</div>
+
+<div class="sheet" id="menuPageSheet">
+  <button class="close-x" id="closeMenuPage">&times;</button>
+  <button class="back-link" id="backToDetail">&lsaquo; back</button>
+  <h2 id="menuPageTitle"></h2>
+  <div class="sub" id="menuPageSub"></div>
+  <div id="menuPageBody"></div>
+  <div class="addline">
+    <input class="sec" id="mp_vendor" placeholder="Vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
+    <input class="sec" id="mp_section" placeholder="Category" autocomplete="off" autocapitalize="words" spellcheck="false">
+    <input id="mp_item" placeholder="Item ordered" autocomplete="off">
+    <button id="mp_add" type="button">add</button>
+    <button id="mp_cancel" type="button" style="display:none;">cancel</button>
+  </div>
+  <span class="bulklink" id="mp_bulk">add several at once</span>
+</div>
+
+<div class="sheet" id="diagSheet">
+  <button class="close-x" id="closeDiag">&times;</button>
+  <h2>data check</h2>
+  <div class="sub" id="diagSub">Reads the workbook and reports rows the app cannot match.</div>
+  <div id="diagBody"></div>
+  <div class="btnrow" style="margin-top:14px;">
+    <button class="btn ghost" id="diagFixFlags">Repair menu flags</button>
+  </div>
+</div>
+
+<div class="sheet" id="logSheet">
+  <button class="close-x" id="closeLog">&times;</button>
+  <h2>ordered</h2>
+  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search..." autocomplete="off"></div>
+  <div class="addline">
+    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="Where" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div class="ac-wrap"><input id="lg_what" placeholder="What" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <button id="lg_add" type="button">add</button>
+  </div>
+  <div id="logBody"></div>
+</div>
+
+<div class="sheet" id="formSheet">
+  <button class="close-x" id="closeForm">&times;</button>
+  <h2 id="formTitle">Add Spot</h2>
+  <div class="sub">Writes directly to your Excel file in OneDrive.</div>
+  <div class="field"><label>Name</label><input id="f_name"></div>
+  <div class="field"><label>Category</label>
+    <div class="ac-wrap"><input id="f_category" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="start typing, or tap one below"></div>
+    <div class="quick" id="f_category_quick"></div>
+  </div>
+  <div class="field"><label>Location</label>
+    <div class="ac-wrap"><input id="f_location" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="start typing, or tap one below"></div>
+    <div class="quick" id="f_location_quick"></div>
+  </div>
+  <div class="field"><label>Rating</label>
+    <select id="f_rating"><option value=""></option><option value="-">-</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
+  </div>
+  <div class="field"><label>To Order</label><input id="f_toOrder" placeholder="e.g. tacos al pastor"></div>
+  <div class="field">
+    <div class="hint">Existing entries can't be removed here — only added to.</div>
+    </div>
+  <div class="field"><label>Notes</label><textarea id="f_notes"></textarea></div>
+  <div class="btnrow">
+    <button class="btn ghost" id="cancelForm">Cancel</button>
+    <button class="btn primary" id="saveForm">Save</button>
+  </div>
+</div>
+
+<div class="sheet" id="menuFormSheet">
+  <button class="close-x" id="closeMenuForm">&times;</button>
+  <button class="back-link" id="backToMenuPage">&lsaquo; back</button>
+  <h2 id="menuFormTitle">Log eaten</h2>
+  <div class="sub">Writes directly to the Menu Details sheet in your Excel file.</div>
+  <div id="menuRows"></div>
+  <button class="addRowBtn" id="addMenuRowBtn" type="button">+ Add category</button>
+  <div class="btnrow">
+    <button class="btn ghost" id="cancelMenuForm">Cancel</button>
+    <button class="btn primary" id="saveMenuForm">Save</button>
+  </div>
+</div>
+
+<script>
+/* ====== CONFIG ====== */
+const APP_VERSION = "2026.09.05-2";
+const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
+const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
+const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
+// Path to the file inside the user's OneDrive, relative to drive root.
+const FILE_PATH = "the list/Food + Drink/Claude/Food + Drink.xlsx";
+const MAIN_SHEET = "Food + Drink";
+const MAIN_TABLE = "FoodDrinkTable";
+const MENU_SHEET = "Menu Details";
+const MENU_TABLE = "MenuDetailsTable";
+/* ===================== */
+
+const msalConfig = {
+  auth: {
+    clientId: MSAL_CLIENT_ID,
+    authority: "https://login.microsoftonline.com/common",
+    redirectUri: REDIRECT_URI,
+  },
+  cache: { cacheLocation: "localStorage" }
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+function encPath(p){
+  return p.split('/').map(encodeURIComponent).join('/');
+}
+function graphFileBase(){
+  return `https://graph.microsoft.com/v1.0/me/drive/root:/${encPath(FILE_PATH)}:/workbook`;
+}
+
+let account = null;
+
+async function getToken(){
+  const accounts = msalInstance.getAllAccounts();
+  if(!accounts.length) throw new Error("not signed in");
+  account = accounts[0];
+  try{
+    const res = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account });
+    return res.accessToken;
+  }catch(e){
+    await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES });
+    throw e;
+  }
+}
+
+async function graph(method, path, body){
+  const token = await getToken();
+  const res = await fetch(graphFileBase() + path, {
+    method,
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    const text = await res.text();
+    throw new Error(`Graph ${method} ${path} failed: ${res.status} ${text}`);
+  }
+  if(res.status === 204) return null;
+  return res.json();
+}
+
+async function deleteTableRow(sheet, table, index){
+  const path = `/worksheets('${encodeURIComponent(sheet)}')/tables('${table}')/rows/itemAt(index=${index})`;
+  try{
+    await graph('DELETE', path);
+  }catch(e){
+    // older/alternate form, kept as a fallback
+    await graph('POST', path + '/delete');
+  }
+}
+
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo'];
+
+function rowToObj(rowValues, index){
+  const o = { index };
+  COLS.forEach((c,i) => o[c] = rowValues[i] !== undefined && rowValues[i] !== null ? String(rowValues[i]) : '');
+  return o;
+}
+function objToRow(o){
+  return COLS.map(c => o[c] !== undefined ? o[c] : '');
+}
+
+/* ====== VENUE IDENTITY ======
+   Names are not unique: 28 names repeat across the sheet and 11 of those
+   repeat within the same location. Every lookup below therefore keys on
+   name + location, normalised so that curly apostrophes, stray double
+   spaces and casing differences do not split one venue into two. */
+function normTxt(s){
+  return String(s == null ? '' : s)
+    .replace(/[\u2018\u2019\u02BC\u2032\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2010-\u2015]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+function venueKey(name, location){ return normTxt(name) + '\u0000' + normTxt(location); }
+function vKey(v){ return v ? venueKey(v.name, v.location) : ''; }
+
+/* Find the live row for a venue. Returns null rather than guessing:
+   the old name-only fallback could edit a different branch entirely. */
+function matchVenue(v){
+  if(!v) return null;
+  const key = vKey(v);
+  const cands = venues.filter(x => vKey(x) === key);
+  if(cands.length <= 1) return cands[0] || null;
+  const byIdx = cands.find(x => String(x.index) === String(v.index));
+  if(byIdx) return byIdx;
+  const fields = ['address','notes','toOrder','category','rating'];
+  const same = cands.filter(x => fields.every(k => (x[k]||'') === (v[k]||'')));
+  return same.length === 1 ? same[0] : null;
+}
+function ambiguityError(v){
+  const e = new Error('There are two identical rows for "' + (v.name||'') + '"' +
+    (v.location ? ' in ' + v.location : '') +
+    '. Remove the duplicate in the workbook before editing this one.');
+  e.userFacing = true;
+  return e;
+}
+
+let venues = [];
+let menuRows = [];
+let menus = {};
+let venuesByKey = new Map();
+let venuesByName = new Map();
+let orphanMenuRows = [];
+
+/* Attach one logged item to a venue row. Exact name+location first; then a
+   unique name; then a name whose location is a broader or narrower form of
+   the logged one ("North Bay, CA" vs "Healdsburg, CA"). Anything left over is
+   reported rather than silently dropped. */
+function resolveMenuVenue(r){
+  const exact = venuesByKey.get(venueKey(r.venue, r.location));
+  if(exact && exact.length) return vKey(exact[0]);
+  const byName = venuesByName.get(normTxt(r.venue)) || [];
+  if(byName.length === 1) return vKey(byName[0]);
+  if(byName.length > 1){
+    const loc = normTxt(r.location);
+    if(loc){
+      const near = byName.filter(v => {
+        const l = normTxt(v.location);
+        return l && (l.indexOf(loc) >= 0 || loc.indexOf(l) >= 0);
+      });
+      if(near.length === 1) return vKey(near[0]);
+    }
+  }
+  return null;
+}
+
+async function loadAll(){
+  // load table rows (paged)
+  let rows = [];
+  let next = `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`;
+  while(next){
+    const data = await graph('GET', next.startsWith('http') ? next.replace(graphFileBase(),'') : next);
+    rows = rows.concat(data.value);
+    next = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
+  }
+  venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
+
+  // indexes used to attach menu rows to the right branch
+  venuesByKey = new Map();
+  venuesByName = new Map();
+  venues.forEach(v => {
+    const k = vKey(v), n = normTxt(v.name);
+    (venuesByKey.get(k)  || venuesByKey.set(k, []).get(k)).push(v);
+    (venuesByName.get(n) || venuesByName.set(n, []).get(n)).push(v);
+  });
+
+  // Menu Details is a flat log of what has already been ordered / eaten:
+  // Venue | Location | Vendor | Section | Item
+  try{
+    let mrows = [];
+    let mnext = `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`;
+    while(mnext){
+      const data = await graph('GET', mnext.startsWith('http') ? mnext.replace(graphFileBase(),'') : mnext);
+      mrows = mrows.concat(data.value);
+      mnext = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
+    }
+    menuRows = mrows.map((r,i) => {
+      const v = r.values[0];
+      return {
+        index: r.index !== undefined ? r.index : i,
+        venue:   v[0]!=null ? String(v[0]) : '',
+        location:v[1]!=null ? String(v[1]) : '',
+        vendor:  v[2]!=null ? String(v[2]) : '',
+        section: v[3]!=null ? String(v[3]) : '',
+        item:    v[4]!=null ? String(v[4]) : ''
+      };
+    }).filter(r => r.venue);
+    // Attach each logged item to a specific venue row rather than to a bare
+    // name, so branches of the same chain no longer pool their menus.
+    menus = {};
+    orphanMenuRows = [];
+    menuRows.forEach(r => {
+      r.vkey = resolveMenuVenue(r);
+      if(!r.vkey){ orphanMenuRows.push(r); return; }
+      if(!menus[r.vkey]) menus[r.vkey] = {};
+      const sec = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
+      if(!menus[r.vkey][sec]) menus[r.vkey][sec] = [];
+      if(r.item) menus[r.vkey][sec].push(r.item);
+    });
+  }catch(e){
+    console.warn('menu load failed', e);
+    menuRows = []; menus = {}; orphanMenuRows = [];
+    window.__menuLoadError = e.message;
+  }
+}
+
+/* ====== UI ====== */
+let state = { query:'', category:'', ratings:new Set(), shown:60, near:null };
+
+function haversine(a, b, c, d){
+  const R = 3958.8, t = Math.PI/180;
+  const dLat = (c-a)*t, dLon = (d-b)*t;
+  const h = Math.sin(dLat/2)**2 + Math.cos(a*t)*Math.cos(c*t)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function distOf(v){
+  if(!state.near) return null;
+  const la = parseFloat(v.lat), ln = parseFloat(v.lng);
+  if(isNaN(la) || isNaN(ln)) return null;
+  return haversine(state.near.lat, state.near.lng, la, ln);
+}
+function fmtDist(d){
+  if(d == null) return '';
+  return d < 0.19 ? Math.round(d*5280) + ' ft' : d.toFixed(d<10?1:0) + ' mi';
+}
+
+function matches(v){
+  if(state.category && (v.category||'').trim().toLowerCase() !== state.category.trim().toLowerCase()) return false;
+  if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
+  if(state.query){
+    const q = state.query.toLowerCase();
+    const eaten = menus[vKey(v)] ? Object.entries(menus[vKey(v)]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';
+    const hay = [v.name, v.category, v.location, v.notes, v.toOrder, eaten].filter(Boolean).join(' ').toLowerCase();
+    if(!hay.includes(q)) return false;
+  }
+  return true;
+}
+// Table row indexes shift whenever rows are added or removed, so always
+// re-read and re-match immediately before writing.
+async function resolveVenue(v){
+  await loadAll();
+  const m = matchVenue(v);
+  if(!m && venues.some(x => vKey(x) === vKey(v))) throw ambiguityError(v);
+  return m;
+}
+function hasMenu(v){
+  const m = menus[vKey(v)];
+  return !!(m && Object.keys(m).length);
+}
+function ratingBadgeClass(r){
+  r = (r||'').trim();
+  if(r==='y') return 'y';
+  if(r==='n') return 'n';
+  return 'dash';
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function populateCategories(){
+  const sel = document.getElementById('categorySelect');
+  sel.innerHTML = '<option value="">All categories</option>';
+  const byLower = {};
+  venues.map(v=>(v.category||'').trim()).filter(Boolean).forEach(c => {
+    const k=c.toLowerCase(); (byLower[k]=byLower[k]||{})[c]=(byLower[k][c]||0)+1;
+  });
+  const cats = Object.values(byLower)
+    .map(variants => Object.entries(variants).sort((a,b)=>b[1]-a[1])[0][0])
+    .sort((a,b)=>a.toLowerCase().localeCompare(b.toLowerCase()));
+  cats.forEach(c => { const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
+  // rebuilding the options used to silently drop the active filter; keep it
+  if(state.category){
+    if(!cats.some(c => c === state.category)){
+      const o=document.createElement('option'); o.value=state.category; o.textContent=state.category; sel.appendChild(o);
+    }
+    sel.value = state.category;
+  }
+  syncCategoryUI();
+}
+
+// one tap back to everything, and the filter reads as "on" while it is on
+function syncCategoryUI(){
+  const sel = document.getElementById('categorySelect');
+  const clear = document.getElementById('catClear');
+  const on = !!state.category;
+  if(sel) sel.classList.toggle('on', on);
+  if(clear) clear.style.display = on ? '' : 'none';
+}
+function clearCategory(){
+  state.category = '';
+  state.shown = 60;
+  document.getElementById('categorySelect').value = '';
+  syncCategoryUI();
+  render();
+}
+
+function isBrowsing(){
+  return !!(state.query.trim() || state.category || state.ratings.size || state.near);
+}
+
+function render(){
+  const list = document.getElementById('list');
+  if(!isBrowsing()){
+    list.innerHTML = '<div class="hint-empty">type to search, or pick a category</div>';
+    document.getElementById('resultCount').textContent = '';
+    document.getElementById('geoNote').style.display = 'none';
+    return;
+  }
+  let filtered = venues.filter(matches);
+  if(state.near){
+    filtered = filtered.filter(v => distOf(v) !== null)
+                       .sort((x,y) => distOf(x) - distOf(y));
+  }
+  list.innerHTML = '';
+  const toShow = filtered.slice(0, state.shown);
+  document.getElementById('resultCount').textContent = filtered.length + ' result' + (filtered.length===1?'':'s');
+  const gn = document.getElementById('geoNote');
+  gn.style.display = (state.near && filtered.slice(0,state.shown).some(v => v.geo !== 'exact')) ? '' : 'none';
+  toShow.forEach(v => {
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.innerHTML = `
+      <div class="item-top">
+        <div class="item-name">${escapeHtml(v.name||'')}</div>
+        ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">\u2713</span>` : ''}
+        ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
+      </div>
+      <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${state.near ? `<span class="dist">${fmtDist(distOf(v))}${v.geo!=='exact'?'*':''}</span>` : ''}</div>
+      ${v.toOrder ? `<div class="toorder"><span class="tolabel">To Order:</span> ${escapeHtml(String(v.toOrder).split(/[;,]/).map(x=>x.trim()).filter(Boolean).join(', '))}</div>` : ''}
+    `;
+    el.addEventListener('click', () => openDetail(v));
+    list.appendChild(el);
+  });
+  if(filtered.length > toShow.length){
+    const btn = document.createElement('button');
+    btn.className = 'more';
+    btn.textContent = `Show more (${filtered.length - toShow.length} left)`;
+    btn.addEventListener('click', () => { state.shown += 100; render(); });
+    list.appendChild(btn);
+  }
+}
+
+const suggestBox = document.getElementById('suggestBox');
+let sugItems = [], sugSel = -1;
+
+function hideSuggest(){ suggestBox.classList.remove('open'); suggestBox.innerHTML=''; sugItems=[]; sugSel=-1; }
+
+function showSuggest(q){
+  q = q.trim().toLowerCase();
+  if(q.length < 2){ hideSuggest(); return; }
+  // rank: name prefix > start of any word in the name > anywhere in the name
+  // > category/location. The old loop stopped early and only ever looked at the
+  // very start of the name, so a second word stopped matching anything.
+  const starts = [], words = [], contains = [], meta = [];
+  for(const v of venues){
+    const n = (v.name||'').toLowerCase();
+    if(!n) continue;
+    if(n.startsWith(q)) starts.push(v);
+    else if(n.split(/[^a-z0-9]+/).some(w => w && w.startsWith(q))) words.push(v);
+    else if(n.includes(q)) contains.push(v);
+    else if(((v.category||'') + ' ' + (v.location||'')).toLowerCase().includes(q)) meta.push(v);
+    if(starts.length >= 8) break;
+  }
+  sugItems = starts.concat(words, contains, meta).slice(0, 8);
+  if(!sugItems.length){ hideSuggest(); return; }
+  suggestBox.innerHTML = sugItems.map((v,i) => `<div class="sug" data-i="${i}">${escapeHtml(v.name)}<small>${escapeHtml([v.category, v.location].filter(Boolean).join(' \u00b7 '))}</small></div>`).join('');
+  suggestBox.querySelectorAll('.sug').forEach(el => {
+    el.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      const v = sugItems[parseInt(el.dataset.i,10)];
+      hideSuggest();
+      openDetail(v);
+    });
+  });
+  sugSel = -1;
+  suggestBox.classList.add('open');
+}
+
+document.getElementById('searchBox').addEventListener('input', e => {
+  state.query = e.target.value; state.shown=60; render();
+  showSuggest(e.target.value);
+});
+document.getElementById('searchBox').addEventListener('keydown', e => {
+  if(!sugItems.length) return;
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    e.preventDefault();
+    sugSel += (e.key === 'ArrowDown' ? 1 : -1);
+    if(sugSel < 0) sugSel = sugItems.length - 1;
+    if(sugSel >= sugItems.length) sugSel = 0;
+    suggestBox.querySelectorAll('.sug').forEach((el,i) => el.classList.toggle('sel', i === sugSel));
+  } else if(e.key === 'Enter'){
+    const v = sugSel >= 0 ? sugItems[sugSel] : sugItems[0];
+    hideSuggest();
+    e.target.blur();
+    openDetail(v);
+  } else if(e.key === 'Escape'){
+    hideSuggest();
+  }
+});
+document.getElementById('searchBox').addEventListener('blur', () => setTimeout(hideSuggest, 120));
+document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; syncCategoryUI(); render(); });
+document.getElementById('catClear').addEventListener('click', clearCategory);
+document.querySelectorAll('.chip[data-rating]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const r = chip.dataset.rating;
+    if(state.ratings.has(r)){ state.ratings.delete(r); chip.classList.remove('active'); }
+    else { state.ratings.add(r); chip.classList.add('active'); }
+    state.shown = 60;
+    render();
+  });
+});
+document.getElementById('nearChip').addEventListener('click', () => {
+  const chip = document.getElementById('nearChip');
+  if(state.near){ state.near=null; chip.classList.remove('active'); chip.textContent='nearest'; state.shown=60; render(); return; }
+  if(!navigator.geolocation){ alert('This browser has no location support.'); return; }
+  chip.textContent='locating…';
+  navigator.geolocation.getCurrentPosition(pos => {
+    state.near = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    chip.classList.add('active'); chip.textContent='nearest';
+    state.shown = 40; render();
+    refineNearby();
+  }, err => {
+    chip.textContent='nearest';
+    alert('Could not get your location: ' + err.message + '\n\nOn iPhone: Settings > Safari > Location.');
+  }, { enableHighAccuracy:true, timeout:10000, maximumAge:60000 });
+});
+
+document.getElementById('diceChip').addEventListener('click', () => {
+  const pool = venues.filter(matches);
+  if(!pool.length){ alert('Nothing matches the current filters.'); return; }
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  lastPickPool = pool.length;
+  openDetail(pick);
+});
+
+
+document.getElementById('clearAllBtn').addEventListener('click', () => {
+  state.query=''; state.category=''; state.ratings.clear(); state.near=null; state.shown=60;
+  document.getElementById('searchBox').value='';
+  document.getElementById('categorySelect').value='';
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('nearChip').textContent='nearest';
+  syncCategoryUI();
+  hideSuggest();
+  render();
+});
+
+const overlay = document.getElementById('overlay');
+const detailSheet = document.getElementById('detailSheet');
+const formSheet = document.getElementById('formSheet');
+const menuFormSheet = document.getElementById('menuFormSheet');
+
+function openDetail(v){
+  const eaten = menus[vKey(v)] || {};
+  const itemCount = Object.values(eaten).reduce((n,a)=>n+a.length,0);
+  const wants = String(v.toOrder||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
+  const wantHtml = '<div class="field"><label>To Order</label>' +
+    wants.map((w,i)=>`<div class="wantrow"><span>${escapeHtml(w)}</span><button class="ate" data-i="${i}" type="button">ate it</button></div>`).join('') +
+    `<div class="wantadd">
+       <input id="d_want" placeholder="to order" autocomplete="off">
+       <button id="d_wantAdd" type="button">add</button>
+     </div></div>`;
+  document.getElementById('detailContent').innerHTML = `
+    <h2>${escapeHtml(v.name||'')}</h2>
+    <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}</div>
+    <div class="field"><label>Rating</label>
+      <div class="rateRow">
+        <div class="rateBtn y ${(v.rating||'').trim()==='y'?'on':''}" data-r="y">y</div>
+        <div class="rateBtn d ${(v.rating||'').trim()==='-'?'on':''}" data-r="-">-</div>
+        <div class="rateBtn n ${(v.rating||'').trim()==='n'?'on':''}" data-r="n">n</div>
+      </div>
+    </div>
+    ${wantHtml}
+    ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
+    <div class="btnrow" style="margin-top:4px;">
+      <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `ordered (${itemCount})` : 'ordered'}</button>
+      ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">again (${lastPickPool})</button>` : ''}
+    </div>
+    <div class="btnrow">
+      <button class="btn ghost" id="editBtn">Edit</button>
+      <button class="btn danger" id="deleteBtn">Delete</button>
+    </div>
+  `;
+  document.querySelectorAll('#detailContent .ate').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i = parseInt(btn.dataset.i,10);
+      const item = wants[i];
+      const section = prompt('Which part of the menu is "' + item + '"?', 'Other');
+      if(section === null) return;
+      const remaining = wants.filter((_,j)=>j!==i).join('; ');
+      closeDetail();
+      await withBusy(async () => {
+        await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+          { values: [[v.name, v.location||'', '', section.trim()||'Other', item]] });
+        const cur = await resolveVenue(v);
+        if(cur){
+          const rec = Object.assign({}, cur, { toOrder: remaining, hasMenuDetail: 'x' });
+          delete rec.index;
+          await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+        }
+        await loadAll(); populateCategories(); render();
+        openMenuPage(matchVenue(v) || v);
+      });
+    });
+  });
+  // add straight to the To Order list without opening the edit form
+  async function addWant(){
+    const inp = document.getElementById('d_want');
+    const text = (inp.value || '').trim();
+    if(!text) return;
+    const next = wants.concat([text]).join('; ');
+    inp.value = '';
+    await withBusy(async () => {
+      const cur = await resolveVenue(v);
+      if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); return; }
+      const rec = Object.assign({}, cur, { toOrder: next });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      await loadAll();
+      const fresh = matchVenue(v);
+      if(fresh) fresh.toOrder = next;   // same reason as the rating: our write wins
+      populateCategories(); render();
+      openDetail(fresh || Object.assign({}, v, { toOrder: next }));
+      const again = document.getElementById('d_want');
+      if(again) again.focus();
+    });
+  }
+  document.getElementById('d_wantAdd').addEventListener('click', addWant);
+  document.getElementById('d_want').addEventListener('keydown', e => { if(e.key === 'Enter') addWant(); });
+
+  document.querySelectorAll('#detailContent .rateBtn').forEach(el => {
+    el.addEventListener('click', async () => {
+      const want = el.dataset.r;
+      const prev = (v.rating||'').trim();
+      const next = prev === want ? '' : want;      // tapping the active one clears it
+
+      // show it immediately: button state, and the list behind the sheet
+      v.rating = next;
+      document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
+        b.classList.toggle('on', b.dataset.r === next));
+      render();
+
+      try{
+        const rowPath = i => `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${i})`;
+        // Always re-read and re-match first. Writing to the cached index could
+        // land on a different venue once rows had shifted, and rebuilding the
+        // row from the stale in-memory copy could roll back someone else's
+        // edit to notes or To Order.
+        const cur = await resolveVenue(v);
+        if(!cur) throw new Error('row not found');
+        await graph('PATCH', rowPath(cur.index),
+          { values: [objToRow(Object.assign({}, cur, { rating: next }))] });
+        // The write succeeded. Re-read only to re-sync the row index — Graph can
+        // still hand back the pre-write value for a moment, and trusting that
+        // read is what used to wipe a rating set right after a search.
+        await loadAll();
+        const fresh = matchVenue(v);
+        if(fresh){
+          v.index = fresh.index;
+          fresh.rating = next;          // our write wins over a stale read
+        }
+        v.rating = next;
+        document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
+          b.classList.toggle('on', b.dataset.r === next));
+        populateCategories(); render();
+      }catch(err){
+        v.rating = prev;                             // roll the UI back
+        document.querySelectorAll('#detailContent .rateBtn').forEach(b =>
+          b.classList.toggle('on', b.dataset.r === prev));
+        render();
+        alert('Could not save the rating: ' + err.message);
+      }
+    });
+  });
+  const reroll = document.getElementById('rerollBtn');
+  if(reroll) reroll.addEventListener('click', () => {
+    const pool = venues.filter(matches).filter(x => x.name !== v.name);
+    if(!pool.length){ alert('No other options match.'); return; }
+    openDetail(pool[Math.floor(Math.random() * pool.length)]);
+  });
+  document.getElementById('editBtn').addEventListener('click', () => { closeDetail(); openForm(v); });
+  document.getElementById('openMenuPageBtn').addEventListener('click', () => { closeDetail(); openMenuPage(v); });
+  document.getElementById('deleteBtn').addEventListener('click', async () => {
+    if(!confirm(`Delete "${v.name}" from your Excel file?`)) return;
+    closeDetail();
+    await withBusy(async () => {
+      const cur = await resolveVenue(v);
+      if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); render(); return; }
+      await deleteTableRow(MAIN_SHEET, MAIN_TABLE, cur.index);
+      await loadAll();
+      populateCategories();
+      render();
+    });
+  });
+  hideSuggest();
+  overlay.classList.add('open');
+  detailSheet.classList.add('open');
+}
+function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); lastPickPool = 0; }
+document.getElementById('closeDetail').addEventListener('click', closeDetail);
+overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); closeMenuPage(); closeLog(); closeDiag(); });
+
+let lastPickPool = 0;
+let editingVenue = null;
+function openForm(v){
+  editingVenue = v || null;
+  document.getElementById('formTitle').textContent = v ? 'Edit Spot' : 'Add Spot';
+  document.getElementById('f_name').value = v ? (v.name||'') : '';
+  document.getElementById('f_category').value = v ? (v.category||'') : '';
+  document.getElementById('f_location').value = v ? (v.location||'') : '';
+  document.getElementById('f_rating').value = v ? (v.rating||'').trim() : '';
+  document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
+  document.getElementById('f_notes').value = v ? (v.notes||'') : '';
+  const catIn = document.getElementById('f_category');
+  const locIn = document.getElementById('f_location');
+  attachAutocomplete(catIn, categoryOptions);
+  attachAutocomplete(locIn, locationOptions);
+  fillQuick('f_category_quick', catIn, categoryOptions());
+  fillQuick('f_location_quick', locIn, locationOptions());
+  overlay.classList.add('open');
+  formSheet.classList.add('open');
+}
+function closeForm(){ overlay.classList.remove('open'); formSheet.classList.remove('open'); editingVenue=null; }
+document.getElementById('addBtn').addEventListener('click', () => openForm(null));
+document.getElementById('closeForm').addEventListener('click', closeForm);
+document.getElementById('cancelForm').addEventListener('click', closeForm);
+
+document.getElementById('saveForm').addEventListener('click', async () => {
+  const rec = {
+    name: document.getElementById('f_name').value.trim(),
+    category: document.getElementById('f_category').value.trim(),
+    location: document.getElementById('f_location').value.trim(),
+    address: editingVenue ? (editingVenue.address||'') : '',
+    lat: editingVenue ? (editingVenue.lat||'') : '',
+    lng: editingVenue ? (editingVenue.lng||'') : '',
+    geo: editingVenue ? (editingVenue.geo||'') : '',
+    rating: document.getElementById('f_rating').value,
+    toOrder: document.getElementById('f_toOrder').value.trim(),
+    notes: document.getElementById('f_notes').value.trim(),
+    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : ''
+  };
+  if(!rec.name){ alert('Name is required'); return; }
+  closeForm();
+  await withBusy(async () => {
+    if(editingVenue){
+      const cur = await resolveVenue(editingVenue);
+      if(!cur){ alert('Could not find "' + editingVenue.name + '" in the sheet any more.'); return; }
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+    } else {
+      await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
+    }
+    await loadAll();
+    populateCategories();
+    render();
+  });
+});
+
+/* ====== Menu page: what has been ordered here ====== */
+const menuPageSheet = document.getElementById('menuPageSheet');
+let menuPageVenue = null;
+
+function renderMenuPage(){
+  const v = menuPageVenue;
+  if(!v) return;
+  // build flat rows straight from menuRows so each row keeps its real table index
+  const rows = menuRows
+    .filter(r => r.vkey === vKey(v) && r.item && r.item !== '(no items recorded)')
+    .map(r => ({ index: r.index, vendor: r.vendor || '', cat: r.section || (r.vendor ? '' : 'Other'), item: r.item }))
+    .sort((a,b) => a.vendor.localeCompare(b.vendor) || a.cat.localeCompare(b.cat) || a.item.localeCompare(b.item));
+  const cats = new Set(rows.map(r => r.vendor + '|' + r.cat));
+  document.getElementById('menuPageTitle').textContent = v.name;
+  document.getElementById('menuPageSub').textContent = rows.length
+    ? rows.length + ' item' + (rows.length===1?'':'s')
+    : 'Nothing recorded yet';
+  const body = document.getElementById('menuPageBody');
+  let html = '';
+  if(rows.length){
+    html += '<div class="mp-head"><span>Category</span><span>Item</span><span style="width:22px;"></span></div>';
+    let lastVendor = null;
+    rows.forEach(r => {
+      if(r.vendor !== lastVendor){
+        if(r.vendor) html += `<div class="mp-vend">${escapeHtml(r.vendor)}</div>`;
+        lastVendor = r.vendor;
+      }
+      html += `<div class="mp-row" data-index="${r.index}">
+        <span class="mp-cat">${escapeHtml(r.cat)}</span>
+        <span class="mp-it">${escapeHtml(r.item)}</span>
+        <button type="button" title="remove">&times;</button>
+      </div>`;
+    });
+  }
+  body.innerHTML = html;
+  // tap a row (not the x) to load it into the inputs for editing
+  body.querySelectorAll('.mp-row').forEach(rowEl => {
+    rowEl.addEventListener('click', e => {
+      if(e.target.tagName === 'BUTTON') return;
+      const idx = parseInt(rowEl.dataset.index, 10);
+      const live = menuRows.find(r => r.index === idx && r.vkey === vKey(v));
+      if(!live) return;
+      editingLogRow = { venue: live.venue, vkey: live.vkey, vendor: live.vendor, section: live.section, item: live.item };
+      document.getElementById('mp_vendor').value = live.vendor;
+      document.getElementById('mp_section').value = live.section;
+      document.getElementById('mp_item').value = live.item;
+      document.getElementById('mp_add').textContent = 'save';
+      document.getElementById('mp_cancel').style.display = '';
+      document.getElementById('mp_item').focus();
+    });
+  });
+  body.querySelectorAll('.mp-row button').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const rowEl = btn.closest('.mp-row');
+      const idx = parseInt(rowEl.dataset.index, 10);
+      const item = rowEl.querySelector('.mp-it').textContent;
+      if(!confirm('Remove "' + item + '" from ' + v.name + '?')) return;
+      await withBusy(async () => {
+        // re-read the table so the index is current, then match on content
+        await loadAll();
+        const live = menuRows.find(r => r.index === idx && r.vkey === vKey(v) && r.item === item)
+                  || menuRows.find(r => r.vkey === vKey(v) && r.item === item);
+        if(!live){ alert('That item is no longer in the sheet.'); render(); renderMenuPage(); return; }
+        await deleteTableRow(MENU_SHEET, MENU_TABLE, live.index);
+        await loadAll();
+        // if nothing is left, clear the flag on tab 1
+        const stillHas = menuRows.some(r => r.vkey === vKey(v) && r.item);
+        const cur = matchVenue(v);
+        if(cur && !stillHas && cur.hasMenuDetail === 'x'){
+          const rec = Object.assign({}, cur, { hasMenuDetail: '' });
+          delete rec.index;
+          await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+          await loadAll();
+        }
+        menuPageVenue = matchVenue(v) || v;
+        populateCategories(); render(); refreshSectionList(); renderMenuPage();
+      });
+    });
+  });
+}
+
+// Canonical sections (cleaned 2026-08-08); stadium venues also use stand names.
+const SECTIONS = ['Appetizers','Mains','Sandwiches & Burgers','Pizza','Tacos & Antojitos',
+                  'Dim Sum & Dumplings','Noodles & Rice','Seafood','Salads','Soups',
+                  'Sides & Sauces','Snacks','Breakfast','Bagels','Bakery & Pastry','Desserts',
+                  'Coffee & Tea','Drinks','Cocktails','Beer','Wine','Spirits',
+                  'Specials & Happy Hour','Other'];
+
+/* ====== Autocomplete (rewritten 2026.08.15) ======
+   The old version only completed when what you typed was a prefix of the whole
+   option, so it went dead the moment you started on a later word ("burgers",
+   "sauces"). This matches whole-string prefixes, the start of any word inside
+   an option, and finally any substring — and always shows a tappable list, so
+   completion never silently disappears. Inline completion still happens for
+   whole-string prefixes only, and only while the caret is at the end. */
+
+/* Options may be plain strings or { value, hint, search } — the second form
+   lets a list be searched by more than the text it inserts. */
+function acNorm(o){
+  if(o && typeof o === 'object')
+    return { value: String(o.value||''), hint: String(o.hint||''), search: String(o.search || o.value || '') };
+  return { value: String(o||''), hint: '', search: String(o||'') };
+}
+function acRank(options, val){
+  const q = val.trim().toLowerCase();
+  const all = options.map(acNorm);
+  if(!q) return all.slice(0, 12);
+  const pre = [], word = [], sub = [];
+  for(const o of all){
+    const lo = o.search.toLowerCase();
+    if(o.value.toLowerCase() === q) continue;
+    if(lo.startsWith(q)) pre.push(o);
+    else if(lo.split(/[^a-z0-9]+/).some(w => w && w.startsWith(q))) word.push(o);
+    else if(lo.includes(q)) sub.push(o);
+  }
+  return pre.concat(word, sub).slice(0, 12);
+}
+
+function attachAutocomplete(input, getOptions, opts){
+  if(!input || input._ac) return;
+  input._ac = true;
+  opts = opts || {};
+  let wrap = input.parentNode;
+  if(!wrap || !wrap.classList.contains('ac-wrap')){
+    const w = document.createElement('div');
+    w.className = 'ac-wrap';
+    input.parentNode.insertBefore(w, input);
+    w.appendChild(input);
+    wrap = w;
+  }
+  const box = document.createElement('div');
+  box.className = 'ac-box';
+  wrap.appendChild(box);
+
+  let items = [], sel = -1, skip = false;
+
+  function hide(){ box.classList.remove('open'); box.innerHTML = ''; items = []; sel = -1; }
+  function accept(t){
+    const o = acNorm(t);
+    input.value = o.value;
+    hide();
+    if(opts.onPick) opts.onPick(o.value, o);
+    if(opts.next){ const n = document.getElementById(opts.next); if(n) n.focus(); }
+  }
+  function show(){
+    const all = getOptions() || [];
+    items = acRank(all, input.value);
+    if(!items.length){ hide(); return; }
+    box.innerHTML = items.map((o,i) =>
+      `<div class="ac-opt" data-i="${i}">${escapeHtml(o.value)}` +
+      (o.hint ? `<small>${escapeHtml(o.hint)}</small>` : '') + `</div>`).join('');
+    box.querySelectorAll('.ac-opt').forEach(el => {
+      el.addEventListener('mousedown', ev => { ev.preventDefault(); accept(items[+el.dataset.i]); });
+    });
+    sel = -1;
+    box.classList.remove('up');
+    box.classList.add('open');
+    // sheets scroll and clip; flip the list above the field when it would
+    // otherwise open off the bottom of the screen
+    const r = input.getBoundingClientRect();
+    if(window.innerHeight - r.bottom < Math.min(box.scrollHeight + 12, 212)) box.classList.add('up');
+  }
+
+  input.addEventListener('keydown', e => {
+    if(e.key === 'Backspace' || e.key === 'Delete'){ skip = true; return; }
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      if(!items.length){ show(); return; }
+      e.preventDefault();
+      sel += (e.key === 'ArrowDown' ? 1 : -1);
+      if(sel < 0) sel = items.length - 1;
+      if(sel >= items.length) sel = 0;
+      box.querySelectorAll('.ac-opt').forEach((el,i) => el.classList.toggle('sel', i === sel));
+    } else if(e.key === 'Enter'){
+      if(sel >= 0){ e.preventDefault(); accept(items[sel]); return; }
+      const a = input.selectionStart, b = input.selectionEnd;
+      if(b > a) input.setSelectionRange(b, b);   // keep the inline completion
+      hide();
+    } else if(e.key === 'Tab' || e.key === 'ArrowRight'){
+      const a = input.selectionStart, b = input.selectionEnd;
+      if(b > a){ e.preventDefault(); input.setSelectionRange(b, b); hide(); }
+    } else if(e.key === 'Escape'){
+      hide();
+    }
+  });
+
+  input.addEventListener('input', () => {
+    const wasSkip = skip; skip = false;
+    show();
+    const val = input.value;
+    if(wasSkip || !val) return;
+    if(input.selectionStart !== val.length) return;   // caret mid-string: don't fight the user
+    const hit = (getOptions() || []).map(acNorm).find(o =>
+      o.value.toLowerCase().startsWith(val.toLowerCase()) && o.value.length > val.length);
+    if(!hit) return;
+    input.value = hit.value;
+    try{ input.setSelectionRange(val.length, hit.value.length); }catch(err){}
+  });
+
+  input.addEventListener('focus', show);
+  input.addEventListener('blur', () => setTimeout(hide, 150));
+}
+
+/* distinct values, most-used first, canonical casing wins */
+function distinctValues(getter, src){
+  const groups = {};
+  (src || venues).forEach(r => {
+    const s = (getter(r) || '').trim();
+    if(!s) return;
+    const k = s.toLowerCase();
+    if(!groups[k]) groups[k] = {};
+    groups[k][s] = (groups[k][s] || 0) + 1;
+  });
+  return Object.values(groups).map(variants => {
+    const e = Object.entries(variants).sort((a,b) => b[1] - a[1]);
+    return { label: e[0][0], n: e.reduce((s,x) => s + x[1], 0) };
+  }).sort((a,b) => b.n - a.n || a.label.localeCompare(b.label));
+}
+function categoryOptions(){ return distinctValues(v => v.category).map(x => x.label); }
+function locationOptions(){ return distinctValues(v => v.location).map(x => x.label); }
+function vendorOptions(){ return distinctValues(r => r.vendor, menuRows).map(x => x.label); }
+function venueNameOptions(){ return distinctValues(v => v.name).map(x => x.label); }
+/* Everything ordered, searchable by its category as well as its own text:
+   typing "apps" surfaces the items filed under Appetizers. */
+function whatOptions(){
+  const byItem = new Map();
+  menuRows.forEach(r => {
+    if(!r.item || r.item === '(no items recorded)') return;
+    const k = normTxt(r.item);
+    if(!byItem.has(k)) byItem.set(k, { value: r.item.trim(), secs: new Map(), venues: new Set() });
+    const e = byItem.get(k);
+    const sec = [r.vendor, r.section].filter(Boolean).join(' — ');
+    if(sec) e.secs.set(sec, (e.secs.get(sec)||0) + 1);
+    if(r.vkey) e.venues.add(r.vkey);
+  });
+  return [...byItem.values()].map(e => {
+    const hint = [...e.secs.entries()].sort((a,b) => b[1]-a[1]).map(x => x[0])[0] || '';
+    return { value: e.value, hint, search: e.value + ' ' + [...e.secs.keys()].join(' ') };
+  }).sort((a,b) => a.value.localeCompare(b.value));
+}
+/* Which category this item has been filed under before — at this place first,
+   then anywhere. Keeps the removed Category box from costing any accuracy. */
+function sectionForItem(item, v){
+  const k = normTxt(item);
+  const pick = rows => {
+    const c = new Map();
+    rows.forEach(r => { const s = (r.section||'').trim(); if(s) c.set(s, (c.get(s)||0)+1); });
+    return [...c.entries()].sort((a,b) => b[1]-a[1]).map(x => x[0])[0] || '';
+  };
+  const here = menuRows.filter(r => normTxt(r.item) === k && v && r.vkey === vKey(v));
+  return pick(here) || pick(menuRows.filter(r => normTxt(r.item) === k)) || 'Other';
+}
+function sectionOptions(){
+  const out = [], seen = {};
+  const add = s => {
+    s = (s || '').trim(); if(!s) return;
+    const k = s.toLowerCase(); if(seen[k]) return;
+    seen[k] = 1; out.push(s);
+  };
+  distinctValues(r => r.section, menuRows).forEach(x => add(x.label));
+  SECTIONS.forEach(add);
+  return out;
+}
+
+function refreshSectionList(){
+  attachAutocomplete(document.getElementById('mp_section'), sectionOptions);
+  attachAutocomplete(document.getElementById('mp_vendor'), vendorOptions);
+}
+
+/* tap-to-fill shortcuts under the Add/Edit fields */
+function fillQuick(wrapId, input, options){
+  const wrap = document.getElementById(wrapId);
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  options.slice(0, 8).forEach(t => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = t;
+    if(input.value.trim().toLowerCase() === t.toLowerCase()) b.className = 'on';
+    b.addEventListener('click', () => { input.value = t; fillQuick(wrapId, input, options); });
+    wrap.appendChild(b);
+  });
+}
+
+function openMenuPage(v){
+  menuPageVenue = v;
+  resetLogInputs();
+  refreshSectionList();
+  renderMenuPage();
+  overlay.classList.add('open');
+  menuPageSheet.classList.add('open');
+}
+function closeMenuPage(){ overlay.classList.remove('open'); menuPageSheet.classList.remove('open'); menuPageVenue=null; }
+document.getElementById('closeMenuPage').addEventListener('click', closeMenuPage);
+document.getElementById('backToDetail').addEventListener('click', () => {
+  const v = menuPageVenue;
+  closeMenuPage();
+  if(!v) return;
+  openDetail(matchVenue(v) || v);
+});
+
+let editingLogRow = null;
+function resetLogInputs(){
+  editingLogRow = null;
+  document.getElementById('mp_vendor').value = '';
+  document.getElementById('mp_section').value = '';
+  document.getElementById('mp_item').value = '';
+  document.getElementById('mp_add').textContent = 'add';
+  document.getElementById('mp_cancel').style.display = 'none';
+}
+async function addOrderedItem(){
+  const v = menuPageVenue;
+  if(!v) return;
+  // any text is accepted - the shortlist is only a typing shortcut
+  const vendor = document.getElementById('mp_vendor').value.trim();
+  const sec = document.getElementById('mp_section').value.trim() || (vendor ? '' : 'Other');
+  const item = document.getElementById('mp_item').value.trim();
+  if(!item){ alert('Enter an item.'); return; }
+  if(editingLogRow){
+    const old = editingLogRow;
+    await withBusy(async () => {
+      await loadAll();
+      const live = menuRows.find(r => r.vkey === old.vkey && r.vendor === old.vendor && r.section === old.section && r.item === old.item);
+      if(!live){ alert('That row is no longer in the sheet.'); resetLogInputs(); renderMenuPage(); return; }
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${live.index})`,
+        { values: [[v.name, v.location||'', vendor, sec, item]] });
+      await loadAll(); render();
+      resetLogInputs();
+      renderMenuPage();
+    });
+    return;
+  }
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: [[v.name, v.location||'', vendor, sec, item]] });
+    if(v.hasMenuDetail !== 'x'){
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
+    }
+    await loadAll(); populateCategories(); render(); refreshSectionList();
+    menuPageVenue = matchVenue(v) || v;
+    document.getElementById('mp_item').value = '';
+    document.getElementById('mp_item').focus();
+    renderMenuPage();
+  });
+}
+document.getElementById('mp_add').addEventListener('click', addOrderedItem);
+document.getElementById('mp_cancel').addEventListener('click', resetLogInputs);
+document.getElementById('mp_item').addEventListener('keydown', e => { if(e.key==='Enter') addOrderedItem(); });
+document.getElementById('mp_bulk').addEventListener('click', () => {
+  const v = menuPageVenue;
+  closeMenuPage();
+  openMenuForm(v);
+});
+
+/* ====== Global log: everything ever ordered, searchable ====== */
+const logSheet = document.getElementById('logSheet');
+/* The list stays empty until something is typed — 988 rows on open was noise,
+   and the category is printed once per run of items rather than on every line. */
+function renderLog(){
+  const body = document.getElementById('logBody');
+  const q = document.getElementById('logSearch').value.trim().toLowerCase();
+  if(!q){ body.innerHTML = ''; return; }
+  let rows = menuRows.filter(r => r.item && r.item !== '(no items recorded)')
+    .filter(r => (r.venue+' '+r.vendor+' '+r.section+' '+r.item).toLowerCase().includes(q));
+  rows = rows.slice().sort((a,b) =>
+    a.venue.localeCompare(b.venue) || a.vendor.localeCompare(b.vendor) ||
+    a.section.localeCompare(b.section) || a.item.localeCompare(b.item));
+  if(!rows.length){ body.innerHTML = '<div class="hint-empty">Nothing ordered matches that.</div>'; return; }
+
+  let html = '', lastVenue = null, lastCat = null, open = false, shown = 0, cut = false;
+  const closeGrp = () => { if(open){ html += '</div></div>'; open = false; } };
+  for(const r of rows){
+    if(shown >= 500){ cut = true; break; }
+    const cat = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
+    if(r.venue !== lastVenue){
+      closeGrp();
+      html += `<div class="log-head" data-venue="${escapeHtml(r.venue)}">${escapeHtml(r.venue)}</div>`;
+      lastVenue = r.venue; lastCat = null;
+    }
+    if(cat !== lastCat){
+      closeGrp();
+      html += `<div class="log-grp"><div class="grp-cat">${escapeHtml(cat)}</div><div class="grp-items">`;
+      open = true; lastCat = cat;
+    }
+    html += `<div class="grp-item" data-venue="${escapeHtml(r.venue)}">${escapeHtml(r.item)}</div>`;
+    shown++;
+  }
+  closeGrp();
+  if(cut) html += '<div class="hint-empty">refine the search to see the rest</div>';
+  body.innerHTML = html;
+  body.querySelectorAll('.grp-item, .log-head').forEach(el => {
+    el.addEventListener('click', () => {
+      const name = el.dataset.venue;
+      const v = venues.find(x => normTxt(x.name) === normTxt(name));
+      closeLog();
+      if(v) openMenuPage(v);
+    });
+  });
+}
+/* add an ordered item from the global log, without hunting for the place first */
+async function addLogItem(){
+  const nameIn = document.getElementById('lg_venue');
+  const itemIn = document.getElementById('lg_what');
+  const name = nameIn.value.trim();
+  const item = itemIn.value.trim();
+  if(!name){ alert('Which place?'); nameIn.focus(); return; }
+  if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
+  const hits = venues.filter(x => normTxt(x.name) === normTxt(name));
+  if(!hits.length){ alert('No place called "' + name + '" yet — add it with + first.'); nameIn.focus(); return; }
+  if(hits.length > 1){
+    const where = hits.map(x => x.location || 'no location').join(', ');
+    alert('More than one place is called "' + name + '" (' + where + '). Open the right one from the list and log it there.');
+    nameIn.focus(); return;
+  }
+  const v = hits[0];
+  // no Category box any more: reuse the category this item was last filed
+  // under at this place, then anywhere, before falling back to Other
+  const sec = sectionForItem(item, v);
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: [[v.name, v.location||'', '', sec, item]] });
+    if(v.hasMenuDetail !== 'x'){
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
+    }
+    await loadAll(); populateCategories(); render();
+    nameIn.value = v.name;           // stay on the same place for the next item
+    itemIn.value = '';
+    renderLog();
+    itemIn.focus();
+  });
+}
+document.getElementById('lg_add').addEventListener('click', addLogItem);
+document.getElementById('lg_what').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addLogItem();
+});
+
+function openLog(prefillVenue){
+  document.getElementById('logSearch').value='';
+  document.getElementById('lg_venue').value = prefillVenue || '';
+  document.getElementById('lg_what').value = '';
+  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_what' });
+  attachAutocomplete(document.getElementById('lg_what'), whatOptions);
+  renderLog();
+  overlay.classList.add('open');
+  logSheet.classList.add('open');
+}
+function closeLog(){ overlay.classList.remove('open'); logSheet.classList.remove('open'); }
+document.getElementById('logLink').addEventListener('click', () => openLog());
+document.getElementById('closeLog').addEventListener('click', closeLog);
+document.getElementById('logSearch').addEventListener('input', renderLog);
+
+/* ====== Menu edit form ====== */
+let menuEditingVenue = null;
+
+function addMenuRow(key, val){
+  const wrap = document.getElementById('menuRows');
+  const row = document.createElement('div');
+  row.className = 'menurow';
+  row.innerHTML = `
+    <div class="ac-wrap"><input class="mkey" placeholder="Section (e.g. Appetizers)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <input class="mval" placeholder="Item you ate" value="${escapeHtml(val||'')}">
+    <button class="rm" type="button">&times;</button>
+  `;
+  row.querySelector('.rm').addEventListener('click', () => row.remove());
+  wrap.appendChild(row);
+  attachAutocomplete(row.querySelector('.mkey'), sectionOptions);
+}
+
+function openMenuForm(v){
+  menuEditingVenue = v;
+  document.getElementById('menuFormTitle').textContent = 'Log eaten — ' + v.name;
+  const wrap = document.getElementById('menuRows');
+  wrap.innerHTML = '';
+  addMenuRow('', ''); addMenuRow('', '');
+  overlay.classList.add('open');
+  menuFormSheet.classList.add('open');
+}
+function closeMenuForm(){ overlay.classList.remove('open'); menuFormSheet.classList.remove('open'); menuEditingVenue=null; }
+document.getElementById('addMenuRowBtn').addEventListener('click', () => addMenuRow('', ''));
+document.getElementById('closeMenuForm').addEventListener('click', closeMenuForm);
+document.getElementById('backToMenuPage').addEventListener('click', () => {
+  const v = menuEditingVenue;
+  closeMenuForm();
+  if(v) openMenuPage(v);
+});
+document.getElementById('cancelMenuForm').addEventListener('click', closeMenuForm);
+
+document.getElementById('saveMenuForm').addEventListener('click', async () => {
+  const v = menuEditingVenue;
+  if(!v) return;
+  const pairs = Array.from(document.querySelectorAll('#menuRows .menurow')).map(r => ({
+    section: r.querySelector('.mkey').value.trim() || 'Other',
+    item:    r.querySelector('.mval').value.trim()
+  })).filter(p => p.item);
+  if(!pairs.length){ alert('Add at least one item.'); return; }
+  closeMenuForm();
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: pairs.map(p => [v.name, v.location||'', '', p.section, p.item]) });
+    if(v.hasMenuDetail !== 'x'){
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
+    }
+    await loadAll(); populateCategories(); render();
+    openMenuPage(matchVenue(v) || v);
+  });
+});
+
+/* Coordinates start as ZIP-code centroids. When you use "nearest", the app
+   quietly upgrades the closest venues to exact street positions via the free
+   US Census geocoder and stores them, so accuracy improves permanently. */
+let refining = false;
+async function refineNearby(){
+  if(refining || !state.near) return;
+  refining = true;
+  try{
+    const todo = venues.filter(matches)
+      .filter(v => distOf(v) !== null && v.geo !== 'exact' && v.address && !/airport/i.test(v.address))
+      .sort((x,y) => distOf(x) - distOf(y))
+      .slice(0, 20);
+    let changed = 0;
+    for(const v of todo){
+      let ll = null;
+      try{
+        const url = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address='
+          + encodeURIComponent(v.address) + '&benchmark=Public_AR_Current&format=json';
+        const res = await fetch(url);
+        if(!res.ok) throw new Error('http ' + res.status);
+        const j = await res.json();
+        const m = j && j.result && j.result.addressMatches && j.result.addressMatches[0];
+        if(m) ll = { lat: +m.coordinates.y.toFixed(6), lng: +m.coordinates.x.toFixed(6) };
+      }catch(e){
+        console.warn('geocode unavailable, staying at ZIP precision', e);
+        break;   // network or CORS blocked - stop trying this round
+      }
+      if(!ll) continue;
+      try{
+        const cur = await resolveVenue(v);
+        if(!cur) continue;
+        const rec = Object.assign({}, cur, { lat: ll.lat, lng: ll.lng, geo: 'exact' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+        changed++;
+      }catch(e){ console.warn('could not save coords', e); break; }
+    }
+    if(changed){ await loadAll(); render(); }
+  } finally { refining = false; }
+}
+
+async function withBusy(fn){
+  const fab = document.getElementById('addBtn');
+  fab.disabled = true;
+  try{
+    await fn();
+  }catch(e){
+    console.error(e);
+    alert(e && e.userFacing ? e.message : 'Something went wrong talking to OneDrive: ' + e.message);
+  }finally{
+    fab.disabled = false;
+  }
+}
+
+/* ====== AUTH GATE ====== */
+async function init(){
+  try{
+    await msalInstance.initialize();
+    const result = await msalInstance.handleRedirectPromise();
+    if(result) account = result.account;
+  }catch(e){
+    showGateError('Sign-in failed: ' + e.message);
+    return;
+  }
+
+  const accounts = msalInstance.getAllAccounts();
+  if(!accounts.length){
+    showSignInButton();
+    return;
+  }
+  account = accounts[0];
+  showLoading();
+  try{
+    await loadAll();
+    populateCategories();
+    render();
+    if(window.__menuLoadError){
+      const b = document.getElementById('menuWarnBanner');
+      b.textContent = 'Menu data did not load: ' + window.__menuLoadError;
+      b.style.display = '';
+    }
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('appHeader').style.display = '';
+    document.getElementById('addBtn').style.display = '';
+  }catch(e){
+    console.error(e);
+    showGateError('Could not load your file: ' + e.message);
+  }
+}
+
+function showSignInButton(){
+  document.getElementById('gateInner').innerHTML = `
+    <h2>eat + drink</h2>
+    <p>Sign in with the Microsoft account connected to your OneDrive to load your live list.</p>
+    <button class="btn primary" id="signInBtn" style="flex:none;padding:12px 24px;">Sign in with Microsoft</button>
+  `;
+  document.getElementById('signInBtn').addEventListener('click', () => {
+    msalInstance.loginRedirect({ scopes: GRAPH_SCOPES });
+  });
+}
+function showLoading(){
+  document.getElementById('gateInner').innerHTML = `
+    <div class="spinner"></div>
+    <p>Loading your list from OneDrive...</p>
+  `;
+}
+function showGateError(msg){
+  document.getElementById('gateInner').innerHTML = `
+    <h2>eat + drink</h2>
+    <p>Something went wrong.</p>
+    <div class="errbox">${escapeHtml(msg)}</div>
+    <button class="btn primary" id="retryBtn" style="flex:none;padding:12px 24px;margin-top:14px;">Try again</button>
+  `;
+  document.getElementById('retryBtn').addEventListener('click', () => location.reload());
+}
+
+/* ====== VERSION CHECK ====== */
+/* ====== DATA CHECK ======
+   Surfaces the things the app cannot resolve on its own: rows that are
+   indistinguishable from each other, logged items pointing at a venue that
+   is not in the list, and Has Menu Detail flags that no longer match the
+   log. The flag drift is repairable from here; the rest need a human
+   decision in the workbook. */
+function findDataIssues(){
+  const dupes = [];
+  const seen = new Map();
+  venues.forEach(v => {
+    const k = vKey(v);
+    if(seen.has(k)){ if(dupes.indexOf(k) < 0) dupes.push(k); }
+    else seen.set(k, v);
+  });
+  const logged = new Set(menuRows.filter(r => r.vkey && r.item).map(r => r.vkey));
+  const falseFlags = venues.filter(v => (v.hasMenuDetail||'').trim() === 'x' && !logged.has(vKey(v)));
+  const missingFlags = venues.filter(v => (v.hasMenuDetail||'').trim() !== 'x' && logged.has(vKey(v)));
+  const noGeo = venues.filter(v => !v.lat || !v.lng);
+  return { dupes, falseFlags, missingFlags, noGeo };
+}
+function renderDiag(){
+  const d = findDataIssues();
+  const line = (n, label, detail) =>
+    '<div class="field"><label>' + label + '</label><div>' + n +
+    (detail ? ' <span style="color:var(--muted);">' + escapeHtml(detail) + '</span>' : '') + '</div></div>';
+  const sample = arr => arr.slice(0,6).map(v => (v.name||'') + (v.location ? ' (' + v.location + ')' : '')).join('; ')
+    + (arr.length > 6 ? ' …' : '');
+  const orphanSample = orphanMenuRows.slice(0,6)
+    .map(r => r.venue + (r.location ? ' (' + r.location + ')' : '')).join('; ')
+    + (orphanMenuRows.length > 6 ? ' …' : '');
+  document.getElementById('diagSub').textContent =
+    venues.length + ' venues, ' + menuRows.length + ' logged items';
+  document.getElementById('diagBody').innerHTML =
+    line(d.dupes.length, 'Identical duplicate rows', d.dupes.length ? 'edits to these are blocked until one is removed' : '') +
+    line(orphanMenuRows.length, 'Logged items with no matching venue', orphanSample) +
+    line(d.falseFlags.length, 'Flagged but nothing logged', sample(d.falseFlags)) +
+    line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
+    line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest');
+  const btn = document.getElementById('diagFixFlags');
+  const n = d.falseFlags.length + d.missingFlags.length;
+  btn.textContent = n ? 'Repair ' + n + ' menu flag' + (n===1?'':'s') : 'Menu flags are correct';
+  btn.disabled = !n;
+}
+function openDiag(){
+  renderDiag();
+  overlay.classList.add('open');
+  document.getElementById('diagSheet').classList.add('open');
+}
+function closeDiag(){
+  overlay.classList.remove('open');
+  document.getElementById('diagSheet').classList.remove('open');
+}
+document.getElementById('closeDiag').addEventListener('click', closeDiag);
+document.getElementById('diagFixFlags').addEventListener('click', async () => {
+  await withBusy(async () => {
+    await loadAll();
+    const d = findDataIssues();
+    const todo = d.falseFlags.map(v => [v, '']).concat(d.missingFlags.map(v => [v, 'x']));
+    if(!todo.length){ renderDiag(); return; }
+    if(!confirm('Update Has Menu Detail on ' + todo.length + ' row' + (todo.length===1?'':'s') + '?')) return;
+    for(const [v, flag] of todo){
+      const cur = matchVenue(v);
+      if(!cur) continue;                      // duplicate or vanished - skip, never guess
+      const rec = Object.assign({}, cur, { hasMenuDetail: flag });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+    }
+    await loadAll(); render(); renderDiag();
+  });
+});
+
+async function checkVersion(){
+  const line = document.getElementById('verLine');
+  if(line){
+    line.innerHTML = 'build ' + APP_VERSION + ' &middot; <a id="diagLink">data check</a>';
+    const dl = document.getElementById('diagLink');
+    if(dl) dl.addEventListener('click', openDiag);
+  }
+  let latest;
+  try{
+    const res = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+    if(!res.ok) return;
+    latest = (await res.text()).trim();
+  }catch(e){ return; }
+  if(!latest || latest === APP_VERSION) return;
+
+  // a newer build exists - reload once, bypassing the cached copy
+  if(sessionStorage.getItem('fd_reloaded_for') === latest){
+    if(line) line.innerHTML = 'build ' + APP_VERSION +
+      ' &mdash; version ' + latest + ' available. <a id="hardReload">reload</a>' +
+      ' &middot; <a id="diagLink2">data check</a>';
+    const dl2 = document.getElementById('diagLink2');
+    if(dl2) dl2.addEventListener('click', openDiag);
+    const a = document.getElementById('hardReload');
+    if(a) a.addEventListener('click', () => {
+      location.replace(location.pathname + '?v=' + encodeURIComponent(latest));
+    });
+    return;
+  }
+  sessionStorage.setItem('fd_reloaded_for', latest);
+  location.replace(location.pathname + '?v=' + encodeURIComponent(latest));
+}
+
+checkVersion();
+init();
+</script>
+</body>
+</html>
