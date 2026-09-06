@@ -215,14 +215,15 @@ select.on{color:#111;font-weight:700;}
                 color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
 #logSheet{min-height:62vh;}
 #lg_new .newmsg{font-size:12px;color:#999;margin-top:12px;}
+#lg_hint.newmsg{font-size:12px;color:#999;}
 #lg_new .addline{margin-top:6px;padding-top:0;border-top:none;}
 #lg_multi .locpicks{margin-top:6px;}
 #lg_multi .locpick{display:flex;align-items:center;gap:9px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--hair);}
 #lg_multi .locpick:last-child{border-bottom:none;}
 #lg_multi .chainrow,#lg_new .chainrow{display:flex;align-items:center;gap:8px;font-size:13px;color:#666;margin-top:8px;}
-#logSheet .hintline{display:flex;align-items:center;gap:10px;margin-top:8px;}
-#lg_newLoc{font-size:22px;line-height:1;text-decoration:none;padding:2px 6px;flex:none;}
-#lg_hint{margin:0;min-width:0;}
+#logSheet .hintline{display:flex;align-items:center;gap:9px;margin-top:8px;}
+#lg_newLoc{font-size:22px;line-height:22px;text-decoration:none;padding:0 4px;flex:none;display:block;}
+#lg_hint{margin:0;min-width:0;line-height:22px;}
 #lg_multi .addline{margin-top:8px;padding-top:0;border-top:none;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
@@ -389,7 +390,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-12";
+const APP_VERSION = "2026.09.06-13";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1710,7 +1711,8 @@ function showNewPlace(name){
   describeNewPlace(name);
   attachAutocomplete(loc, locationOptions, {
     typedOnly: true, next: 'lg_category',
-    onPick: picked => describeNewPlace(document.getElementById('lg_venue').value.trim() || name, picked)
+    onPick: picked => setTimeout(() => describeNewPlace(
+      document.getElementById('lg_venue').value.trim() || name, picked), 0)
   });
   attachAutocomplete(cat, categoryOptions, { typedOnly: true });
   document.getElementById('lg_new').style.display = '';
@@ -1786,14 +1788,19 @@ function refreshLogHint(){
     ? '"' + name + '" is already on the list in ' + kin.map(v => v.location || 'no location').join(', ')
     : 'nothing called "' + name + '" yet — add it?';
 }
+function refreshLogCopy(){
+  refreshLogHint();
+  if(document.getElementById('lg_new').style.display === 'none') return;
+  const name = document.getElementById('lg_venue').value.trim();
+  pendingNewPlace = name;
+  if(name) describeNewPlace(name);
+}
 ['lg_venue','lg_location'].forEach(id => {
-  document.getElementById(id).addEventListener('input', () => {
-    if(id === 'lg_venue') refreshLogHint();
-    if(document.getElementById('lg_new').style.display === 'none') return;
-    const name = document.getElementById('lg_venue').value.trim();
-    pendingNewPlace = name;
-    if(name) describeNewPlace(name);
-  });
+  const el = document.getElementById(id);
+  // deferred: autocomplete completes the rest of the word in its own input
+  // handler, and the line has to describe the finished name, not the prefix
+  ['input','change','blur','keyup'].forEach(ev =>
+    el.addEventListener(ev, () => setTimeout(refreshLogCopy, 0)));
 });
 document.getElementById('lg_newLoc').addEventListener('click', () => {
   const nameIn = document.getElementById('lg_venue');
@@ -1818,7 +1825,7 @@ function openLog(prefillVenue){
   document.getElementById('lg_venue').value = prefillVenue || '';
   document.getElementById('lg_what').value = '';
   attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions,
-    { next: 'lg_what', typedOnly: true, onPick: refreshLogHint });
+    { next: 'lg_what', typedOnly: true, onPick: () => setTimeout(refreshLogCopy, 0) });
   attachAutocomplete(document.getElementById('lg_what'), whatOptions, { typedOnly: true });
   refreshLogHint();
   renderLog();
