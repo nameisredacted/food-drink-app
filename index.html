@@ -216,7 +216,6 @@ select.on{color:#111;font-weight:700;}
 #logSheet{min-height:62vh;}
 #lg_new .newmsg{font-size:12px;color:#999;margin-top:12px;}
 #lg_new .addline{margin-top:6px;padding-top:0;border-top:none;}
-#lg_newCancel,#lg_multiCancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
 #lg_multi .locpicks{margin-top:6px;}
 #lg_multi .locpick{display:flex;align-items:center;gap:9px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--hair);}
 #lg_multi .locpick:last-child{border-bottom:none;}
@@ -329,7 +328,6 @@ select.on{color:#111;font-weight:700;}
       <div class="ac-wrap"><input class="sec" id="lg_location" placeholder="location" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       <div class="ac-wrap"><input class="sec" id="lg_category" placeholder="cuisine (optional)" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
       <button id="lg_newAdd" type="button">add place</button>
-      <button id="lg_newCancel" type="button">cancel</button>
     </div>
     <label class="chainrow" id="lg_brandRow" style="display:none;"><input type="checkbox" id="lg_sameBrand" checked> <span id="lg_brandTxt"></span></label>
   </div>
@@ -339,7 +337,6 @@ select.on{color:#111;font-weight:700;}
     <label class="chainrow"><input type="checkbox" id="lg_multiAll"> <span>log it at every one of them</span></label>
     <div class="addline">
       <button id="lg_multiAdd" type="button">add</button>
-      <button id="lg_multiCancel" type="button">cancel</button>
     </div>
   </div>
   <div id="logBody"></div>
@@ -387,7 +384,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-10";
+const APP_VERSION = "2026.09.06-11";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1662,10 +1659,6 @@ async function addLogItemMulti(){
   });
 }
 document.getElementById('lg_multiAdd').addEventListener('click', addLogItemMulti);
-document.getElementById('lg_multiCancel').addEventListener('click', () => {
-  hideMultiPlace();
-  document.getElementById('lg_venue').focus();
-});
 
 /* ====== New place, straight from the ordered screen ======
    Typing a place that isn't on the list yet used to be a dead end ("add it
@@ -1673,22 +1666,34 @@ document.getElementById('lg_multiCancel').addEventListener('click', () => {
    filtered by — location, and cuisine if it is worth saying — and writes the
    place and the item together. */
 let pendingNewPlace = null;
-/* The line above the fields, and the brand question under them, both describe
-   whatever name is in "where" right now — edit the name and they follow. */
-function describeNewPlace(name){
+/* The line above the fields says what tapping add will actually do, and it is
+   rewritten on every keystroke in either "where" or the location box. Three
+   states: a name nobody has, a branch already on the list, and a new branch of
+   a name that is. The brand question only belongs to the third. */
+function describeNewPlace(name, location){
   const kin = brandRows(name);
+  const loc = location !== undefined
+    ? location
+    : document.getElementById('lg_location').value;
+  const branch = kin.find(v => normTxt(v.location || '') === normTxt(loc || ''));
   const where = kin.map(v => v.location || 'no location').join(', ');
-  document.getElementById('lg_newMsg').textContent = kin.length
-    ? '"' + name + '" is already on the list in ' + where + ' — add another one?'
-    : 'nothing called "' + name + '" yet — add it?';
+  const msg = document.getElementById('lg_newMsg');
   const row = document.getElementById('lg_brandRow');
-  if(kin.length){
-    document.getElementById('lg_brandTxt').textContent = 'same brand as the one in ' + where;
-    if(row.style.display === 'none') document.getElementById('lg_sameBrand').checked = true;
-    row.style.display = '';
-  } else {
+  if(!kin.length){
+    msg.textContent = 'nothing called "' + name + '" yet — add it?';
     row.style.display = 'none';
+    return;
   }
+  if(branch){
+    msg.textContent = '"' + name + '"' + (branch.location ? ' in ' + branch.location : '') +
+      ' is already on the list — this just adds what is new';
+    row.style.display = 'none';
+    return;
+  }
+  msg.textContent = '"' + name + '" is already on the list in ' + where + ' — add another one?';
+  document.getElementById('lg_brandTxt').textContent = 'same brand as the one in ' + where;
+  if(row.style.display === 'none') document.getElementById('lg_sameBrand').checked = true;
+  row.style.display = '';
 }
 function showNewPlace(name){
   hideMultiPlace();
@@ -1698,7 +1703,10 @@ function showNewPlace(name){
   const cat = document.getElementById('lg_category');
   if(!again){ loc.value = ''; cat.value = ''; }   // keep what was typed for this same place
   describeNewPlace(name);
-  attachAutocomplete(loc, locationOptions, { typedOnly: true, next: 'lg_category' });
+  attachAutocomplete(loc, locationOptions, {
+    typedOnly: true, next: 'lg_category',
+    onPick: picked => describeNewPlace(document.getElementById('lg_venue').value.trim() || name, picked)
+  });
   attachAutocomplete(cat, categoryOptions, { typedOnly: true });
   document.getElementById('lg_new').style.display = '';
   loc.focus();
@@ -1763,11 +1771,13 @@ async function addPlaceThenLog(){
     itemIn.focus();
   });
 }
-document.getElementById('lg_venue').addEventListener('input', () => {
-  if(document.getElementById('lg_new').style.display === 'none') return;
-  const name = document.getElementById('lg_venue').value.trim();
-  pendingNewPlace = name;
-  if(name) describeNewPlace(name);
+['lg_venue','lg_location'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => {
+    if(document.getElementById('lg_new').style.display === 'none') return;
+    const name = document.getElementById('lg_venue').value.trim();
+    pendingNewPlace = name;
+    if(name) describeNewPlace(name);
+  });
 });
 document.getElementById('lg_newLoc').addEventListener('click', () => {
   const nameIn = document.getElementById('lg_venue');
@@ -1776,10 +1786,6 @@ document.getElementById('lg_newLoc').addEventListener('click', () => {
   showNewPlace(name);
 });
 document.getElementById('lg_newAdd').addEventListener('click', addPlaceThenLog);
-document.getElementById('lg_newCancel').addEventListener('click', () => {
-  hideNewPlace();
-  document.getElementById('lg_venue').focus();
-});
 ['lg_location','lg_category'].forEach(id => {
   document.getElementById(id).addEventListener('keydown', e => {
     if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addPlaceThenLog();
