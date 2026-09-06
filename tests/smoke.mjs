@@ -222,6 +222,37 @@ const check = (name, fn) => {
   });
 }
 
+/* ---------- regressions found in review ---------- */
+{
+  const a = app({ venues: [['Philz Coffee','Coffee','SF','','','','','','','','','x'],
+                           ['Philz Coffee','Coffee','Palo Alto','','','','','','','','','x']],
+                  menu: [['Philz Coffee','Palo Alto','','Coffee','mint mojito']] });
+  await a.settle(400);
+  a.w.eval("openForm(venues.find(v => v.location === 'SF'))");
+  a.$('f_category').value = 'Coffee & Tea';
+  a.state.calls.length = 0;
+  a.click(a.$('saveForm')); await a.settle(300);
+  check('editing a venue updates its row instead of adding one', () => {
+    if(a.state.calls.some(c => c.method === 'POST' && c.kind === 'venue'))
+      throw new Error('the edit created a second row');
+    if(a.state.venues.length !== 2) throw new Error('row count: ' + a.state.venues.length);
+    const row = a.state.venues.find(r => r[2] === 'SF');
+    if(row[1] !== 'Coffee & Tea') throw new Error('edit not applied: ' + JSON.stringify(row));
+    if(row[11] !== 'x') throw new Error('chain wiped by the edit form: ' + JSON.stringify(row));
+  });
+
+  a.click(a.$('logLink'));
+  a.$('logSearch').value = 'mojito'; a.fire(a.$('logSearch'), 'input');
+  check('log opens the branch the item belongs to', () => {
+    const item = a.w.document.querySelector('#logBody .grp-item');
+    if(!item) throw new Error('nothing listed');
+    a.click(item);
+    const title = a.$('menuPageTitle').textContent;
+    const sub = a.w.eval('menuPageVenue.location');
+    if(sub !== 'Palo Alto') throw new Error('opened ' + title + ' in ' + sub);
+  });
+}
+
 console.log(results.join('\n'));
 console.log(failures ? `\n${failures} failing` : `\nall ${results.length} checks passed`);
 process.exit(failures ? 1 : 0);

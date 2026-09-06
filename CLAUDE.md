@@ -62,6 +62,18 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
 - Venue ordered page: add fields stay behind `+ add items`.
 - Sheets are dismissed with the `×`; panels have no cancel buttons.
 
+## Bugs found in review (fixed 2026.09.06-20) — worth not reintroducing
+
+- `saveForm` called `closeForm()` (which nulls `editingVenue`) **before** the save branch
+  read it, so every edit fell through to the add branch and wrote a **second row**. This is
+  the most likely source of the duplicate rows in the workbook. Capture the venue first.
+- The same handler rebuilt the record literally and omitted `chain`, blanking the flag on
+  save. Any literal record must list every column in `COLS`.
+- The global log opened a venue by name, which is the wrong branch for a chain. It now
+  carries the log row's index and opens the branch that row resolved to.
+- `markChains` called `resolveVenue()` (a full `loadAll`) per row. PATCH does not shift row
+  indexes, so one read per pass is enough — the 43-row backfill was 43 full table reads.
+
 ## Data check (repairs, each one-tap with a confirm)
 
 `findDataIssues()` + the buttons in `#diagSheet`:
@@ -102,7 +114,10 @@ Chat threads are disposable; this file is not. The routine:
    Opening line: *"read CLAUDE.md in food-drink-app, then …"*. That is the whole handoff.
 3. **Run the tests before and after any change**: `node tests/smoke.mjs` (`npm i jsdom`
    once). They stub MSAL and Graph, so the live workbook is never touched.
-4. **Push**: GitHub Desktop, per the convention above. The cloud sandbox's git proxy
+4. **Verify every write.** A `device_commit_files` call has reported success while the
+   Mac still held the old bytes. After writing a file to the Mac, stage it back and compare
+   (`md5sum`) before committing it in git; only then push.
+5. **Push**: GitHub Desktop, per the convention above. The cloud sandbox's git proxy
    refuses credentials for this repo unless `nameisredacted/food-drink-app` is added to
    the session's authorized sources — do that and pushes can happen straight from the
    session instead.

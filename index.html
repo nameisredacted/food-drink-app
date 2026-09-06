@@ -403,7 +403,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-19";
+const APP_VERSION = "2026.09.06-20";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1061,14 +1061,18 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     rating: document.getElementById('f_rating').value,
     toOrder: document.getElementById('f_toOrder').value.trim(),
     notes: document.getElementById('f_notes').value.trim(),
-    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : ''
+    hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : '',
+    chain: editingVenue ? (editingVenue.chain||'') : ''   // never blank an existing flag
   };
   if(!rec.name){ alert('Name is required'); return; }
+  // closeForm() clears editingVenue, so hold on to it first: without this the
+  // save fell through to the "add" branch and every edit wrote a second row.
+  const target = editingVenue;
   closeForm();
   await withBusy(async () => {
-    if(editingVenue){
-      const cur = await resolveVenue(editingVenue);
-      if(!cur){ alert('Could not find "' + editingVenue.name + '" in the sheet any more.'); return; }
+    if(target){
+      const cur = await resolveVenue(target);
+      if(!cur){ alert('Could not find "' + target.name + '" in the sheet any more.'); return; }
       await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
     } else {
       await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
@@ -1474,7 +1478,7 @@ function renderLog(){
     const cat = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
     if(r.venue !== lastVenue){
       closeGrp();
-      html += `<div class="log-head" data-venue="${escapeHtml(r.venue)}">${escapeHtml(r.venue)}</div>`;
+      html += `<div class="log-head" data-venue="${escapeHtml(r.venue)}" data-row="${r.index}">${escapeHtml(r.venue)}</div>`;
       lastVenue = r.venue; lastCat = null;
     }
     if(cat !== lastCat){
@@ -1482,7 +1486,7 @@ function renderLog(){
       html += `<div class="log-grp"><div class="grp-cat">${escapeHtml(cat)}</div><div class="grp-items">`;
       open = true; lastCat = cat;
     }
-    html += `<div class="grp-item" data-venue="${escapeHtml(r.venue)}">${escapeHtml(r.item)}</div>`;
+    html += `<div class="grp-item" data-venue="${escapeHtml(r.venue)}" data-row="${r.index}">${escapeHtml(r.item)}</div>`;
     shown++;
   }
   closeGrp();
@@ -1490,8 +1494,12 @@ function renderLog(){
   body.innerHTML = html;
   body.querySelectorAll('.grp-item, .log-head').forEach(el => {
     el.addEventListener('click', () => {
+      // open the branch the item was logged against, not the first row that
+      // happens to share the name (the log row carries the resolved key)
+      const row = menuRows.find(r => String(r.index) === el.dataset.row);
       const name = el.dataset.venue;
-      const v = venues.find(x => normTxt(x.name) === normTxt(name));
+      const v = (row && row.vkey && venues.find(x => vKey(x) === row.vkey))
+             || venues.find(x => normTxt(x.name) === normTxt(name));
       closeLog();
       if(v) openMenuPage(v);
     });
@@ -1541,10 +1549,11 @@ async function markChains(names){
   const want = new Set(names.map(normTxt).filter(Boolean));
   if(!want.size) return 0;
   if(!await ensureChainColumn()) return 0;
+  await loadAll();   // one read for the pass; PATCH does not shift row indexes
   const todo = venues.filter(v => want.has(normTxt(v.name)) && !isChain(v));
   for(const v of todo){
-    const cur = await resolveVenue(v);
-    if(!cur) continue;
+    const cur = matchVenue(v);
+    if(!cur) continue;                      // duplicate or vanished — skip, never guess
     const rec = Object.assign({}, cur, { chain: 'x' });
     delete rec.index;
     await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`,
