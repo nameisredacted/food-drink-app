@@ -88,6 +88,52 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
 - **Attach logged items** — log rows whose name matches exactly one venue but whose
   Location text is stale (mostly `North Bay, CA`).
 
+## Closure sweep (started 2026-09-06)
+
+Method: cross-match published closure round-ups against the workbook names first (cheap,
+broad), then verify individual venues. Confirmed closed so far — these rows should be
+retired or marked:
+
+| Row | Location | Rating | Evidence |
+|---|---|---|---|
+| Bellota | San Francisco | y | SF Chronicle; Yelp shows CLOSED; Absinthe Group took the space |
+| The Wurst | Healdsburg | y | Healdsburg Tribune / Sonoma Magazine: closed, replacement named |
+| Funky Elephant | Berkeley | - | Infatuation closings list, June 2026 |
+| Bar Brucato | San Francisco | - | Infatuation + Eddie's List, June 2026 |
+| Decant | San Francisco | - | Infatuation (DecantSF bottleshop, June 2026) |
+| Super Mensch | San Francisco | - | Infatuation, June 2026 |
+| Ama | San Francisco | - | Infatuation, May 2026 (Transamerica Pyramid) |
+| Café Sebastian | San Francisco | - | Infatuation, May 2026 (Transamerica Pyramid) |
+| Madlab | San Francisco | - | Infatuation, May 2026 (Transamerica Pyramid) |
+| Oken | Oakland | - | Infatuation, May 2026 (Rockridge) |
+| Gold Palm | Oakland | - | Infatuation, May 2026 |
+| International Smoke | San Francisco | - | Infatuation, May 2026 |
+| Casa Borinqueña | San Francisco | - | Eddie's List, Jan 2026 (Saluhall) |
+| Tiger's Taproom | Oakland | - | Eddie's List, Mar 2026 |
+| Del Popolo | San Francisco | - | Eddie's List, May 2026 — verify, name spelled "Del Poppolo" there |
+| Hamburger Project | San Francisco | - | Eddie's List, May 2026 (Mission) |
+| Noodle in a haystack | San Francisco | - | Eddie's List, June 2026 |
+
+Verified still open: Spoonbar, Willi's Seafood, Elephant in the Room (Healdsburg);
+Sociale, Pacific Cocktail Haven, Yank Sing (101 Spear), Osha Thai (4 Embarcadero Ctr),
+PPQ Dungeness Island (5821 Geary — the Balboa St branch is the closed one) (SF);
+Hang Ah, Bollywood Kitchen, Anna's Seafood, Arandas, El Coyote, Tokyo Central,
+Centurión Lounge SEA.
+
+Note: Amy's Drive Thru matched a closure list, but only the Rohnert Park branch closed and
+the row is a Local Chain — do not retire it. No Sonoma County closure from the 2025 and
+2026 round-ups matches any other row.
+
+Still to sweep: the remaining rated-y rows, then Healdsburg, then the rest of SF.
+
+## Missing locations, verified 2026-09-06
+
+Nine of the 48 no-location rows have logged items; all nine are open and their locations are:
+Hang Ah Dim Sum → San Francisco, CA (1 Pagoda Pl); Bollywood Kitchen → Healdsburg, CA;
+Anna's Seafood → Petaluma, CA; Arandas → Healdsburg, CA; El Coyote → Sonoma, CA;
+Tokyo Central → Emeryville, CA; Centurión Lounge SEA → Seattle, WA.
+Raimondo Park and Mezclá could not be identified — ask before filling them in.
+
 ## Open items (as of the 2026-09-04 workbook snapshot)
 
 - ~13 log names are spelling drift and are **not** auto-attached: Black Oak Coffee
