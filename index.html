@@ -92,6 +92,13 @@
   .mp-head{display:flex;gap:10px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--border);}
   .mp-head span:first-child{flex:0 0 36%;}
   .mp-head span:nth-child(2){flex:1;}
+  .sugwrap{position:relative;}
+  .suggest{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none;}
+  .suggest.open{display:block;}
+  .sug{padding:9px 12px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .sug:last-child{border-bottom:none;}
+  .sug.sel{background:var(--card2);}
+  .sug small{display:block;color:var(--muted);font-size:11px;margin-top:1px;}
   .mp-sec{margin-top:14px;}
   .mp-sec h4{margin:0 0 4px;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;}
   .mp-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;}
@@ -99,11 +106,11 @@
   .mp-item button{background:none;border:none;color:var(--bad);font-size:16px;cursor:pointer;padding:2px 6px;flex:none;}
   .addline{display:flex;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
   .addline input{flex:1;min-width:0;padding:10px 11px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:14px;}
+  .addline input.sec{flex:0 0 34%;}
   .addline button{flex:none;padding:9px 14px;border-radius:8px;border:none;background:var(--accent);color:#1a1208;font-weight:600;font-size:14px;cursor:pointer;}
   .bulklink{display:block;margin-top:10px;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;}
   .refresh{background:none;border:none;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;margin-left:auto;}
   .menurow{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
-  .menurow input{min-width:0;}
   .menurow input.mkey{flex:0 0 38%;}
   .menurow input.mval{flex:1;}
   .menurow button.rm{flex:none;background:none;border:none;color:var(--bad);font-size:18px;cursor:pointer;padding:4px 6px;}
@@ -174,9 +181,11 @@ main{padding:2px 16px 90px;}
 .mp-row{border-bottom:1px solid var(--hair);cursor:pointer;}
 .log-venue{color:#999;font-size:12px;}
 .log-head{font-weight:700;font-size:14px;color:#111;margin:16px 0 2px;cursor:pointer;}
+#mp_cancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
 .addline{flex-wrap:wrap;border-top-color:var(--hair);}
 .addline input{background:#fff;border:1px solid #ddd;border-radius:0;}
 .addline input.sec{flex:1 1 38%;}
+.addline #mp_item{flex:1 1 100%;}
 .addline button{background:#fff;color:var(--accent);border:1px solid #ddd;border-radius:0;font-weight:400;}
 .bulklink{color:var(--accent);text-decoration:none;}
 
@@ -192,6 +201,8 @@ main{padding:2px 16px 90px;}
 .ac-opt:last-child{border-bottom:none;}
 .ac-opt.sel{background:#f4f4f2;}
 .ac-opt small{color:#999;font-size:11px;margin-left:6px;}
+.addline .ac-wrap{flex:1 1 38%;min-width:0;}
+.menurow .ac-wrap{flex:0 0 38%;min-width:0;}
 .quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
 .quick button{background:none;border:1px solid var(--hair);color:var(--accent);
               font-size:12px;padding:4px 9px;cursor:pointer;border-radius:0;}
@@ -202,6 +213,8 @@ select.on{color:#111;font-weight:700;}
                color:var(--text);font-size:14px;border-radius:0;}
 .wantadd button{flex:none;padding:8px 13px;border:1px solid #ddd;background:#fff;
                 color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
+#logSheet .addline{margin-top:10px;padding-top:10px;}
+.addline #lg_item{flex:1 1 100%;}
 </style>
 </head>
 <body>
@@ -218,9 +231,12 @@ select.on{color:#111;font-weight:700;}
   <h1>eat + drink <a class="loglink" id="logLink">ordered</a></h1>
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
-  <div class="searchrow">
-    <input class="search" id="searchBox" placeholder="Search..." autocomplete="off">
-    <button class="clearx" id="clearAllBtn" type="button" title="clear all">&times;</button>
+  <div class="sugwrap">
+    <div class="searchrow">
+      <input class="search" id="searchBox" placeholder="Search..." autocomplete="off">
+      <button class="clearx" id="clearAllBtn" type="button" title="clear all">&times;</button>
+    </div>
+    <div class="suggest" id="suggestBox"></div>
   </div>
   <div class="row">
     <select id="categorySelect"><option value="">All categories</option></select>
@@ -251,7 +267,24 @@ select.on{color:#111;font-weight:700;}
   <h2 id="menuPageTitle"></h2>
   <div class="sub" id="menuPageSub"></div>
   <div id="menuPageBody"></div>
-  <button class="addRowBtn" id="mp_bulk" type="button" style="margin-top:14px;">+ add items</button>
+  <div class="addline">
+    <input class="sec" id="mp_vendor" placeholder="Vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
+    <input class="sec" id="mp_section" placeholder="Category" autocomplete="off" autocapitalize="words" spellcheck="false">
+    <input id="mp_item" placeholder="Item ordered" autocomplete="off">
+    <button id="mp_add" type="button">add</button>
+    <button id="mp_cancel" type="button" style="display:none;">cancel</button>
+  </div>
+  <span class="bulklink" id="mp_bulk">add several at once</span>
+</div>
+
+<div class="sheet" id="diagSheet">
+  <button class="close-x" id="closeDiag">&times;</button>
+  <h2>data check</h2>
+  <div class="sub" id="diagSub">Reads the workbook and reports rows the app cannot match.</div>
+  <div id="diagBody"></div>
+  <div class="btnrow" style="margin-top:14px;">
+    <button class="btn ghost" id="diagFixFlags">Repair menu flags</button>
+  </div>
 </div>
 
 <div class="sheet" id="logSheet">
@@ -259,6 +292,12 @@ select.on{color:#111;font-weight:700;}
   <h2>ordered</h2>
   <div class="sub" id="logSub"></div>
   <div class="searchrow"><input class="search" id="logSearch" placeholder="Search everything ordered..." autocomplete="off"></div>
+  <div class="addline">
+    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="Place" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div class="ac-wrap"><input class="sec" id="lg_section" placeholder="Category" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <input id="lg_item" placeholder="Item ordered" autocomplete="off">
+    <button id="lg_add" type="button">add</button>
+  </div>
   <div id="logBody"></div>
 </div>
 
@@ -294,11 +333,6 @@ select.on{color:#111;font-weight:700;}
   <button class="back-link" id="backToMenuPage">&lsaquo; back</button>
   <h2 id="menuFormTitle">Log eaten</h2>
   <div class="sub">Writes directly to the Menu Details sheet in your Excel file.</div>
-  <div class="field" id="mf_vendorField" style="display:none;">
-    <label>Vendor</label>
-    <input id="mf_vendor" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="which stand or stall">
-  </div>
-  <span class="bulklink" id="mf_vendorLink" style="display:none;margin-bottom:10px;">+ vendor</span>
   <div id="menuRows"></div>
   <button class="addRowBtn" id="addMenuRowBtn" type="button">+ Add category</button>
   <div class="btnrow">
@@ -309,7 +343,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.08.15-6";
+const APP_VERSION = "2026.09.05-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -392,9 +426,72 @@ function objToRow(o){
   return COLS.map(c => o[c] !== undefined ? o[c] : '');
 }
 
+/* ====== VENUE IDENTITY ======
+   Names are not unique: 28 names repeat across the sheet and 11 of those
+   repeat within the same location. Every lookup below therefore keys on
+   name + location, normalised so that curly apostrophes, stray double
+   spaces and casing differences do not split one venue into two. */
+function normTxt(s){
+  return String(s == null ? '' : s)
+    .replace(/[\u2018\u2019\u02BC\u2032\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2010-\u2015]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+function venueKey(name, location){ return normTxt(name) + '\u0000' + normTxt(location); }
+function vKey(v){ return v ? venueKey(v.name, v.location) : ''; }
+
+/* Find the live row for a venue. Returns null rather than guessing:
+   the old name-only fallback could edit a different branch entirely. */
+function matchVenue(v){
+  if(!v) return null;
+  const key = vKey(v);
+  const cands = venues.filter(x => vKey(x) === key);
+  if(cands.length <= 1) return cands[0] || null;
+  const byIdx = cands.find(x => String(x.index) === String(v.index));
+  if(byIdx) return byIdx;
+  const fields = ['address','notes','toOrder','category','rating'];
+  const same = cands.filter(x => fields.every(k => (x[k]||'') === (v[k]||'')));
+  return same.length === 1 ? same[0] : null;
+}
+function ambiguityError(v){
+  const e = new Error('There are two identical rows for "' + (v.name||'') + '"' +
+    (v.location ? ' in ' + v.location : '') +
+    '. Remove the duplicate in the workbook before editing this one.');
+  e.userFacing = true;
+  return e;
+}
+
 let venues = [];
 let menuRows = [];
 let menus = {};
+let venuesByKey = new Map();
+let venuesByName = new Map();
+let orphanMenuRows = [];
+
+/* Attach one logged item to a venue row. Exact name+location first; then a
+   unique name; then a name whose location is a broader or narrower form of
+   the logged one ("North Bay, CA" vs "Healdsburg, CA"). Anything left over is
+   reported rather than silently dropped. */
+function resolveMenuVenue(r){
+  const exact = venuesByKey.get(venueKey(r.venue, r.location));
+  if(exact && exact.length) return vKey(exact[0]);
+  const byName = venuesByName.get(normTxt(r.venue)) || [];
+  if(byName.length === 1) return vKey(byName[0]);
+  if(byName.length > 1){
+    const loc = normTxt(r.location);
+    if(loc){
+      const near = byName.filter(v => {
+        const l = normTxt(v.location);
+        return l && (l.indexOf(loc) >= 0 || loc.indexOf(l) >= 0);
+      });
+      if(near.length === 1) return vKey(near[0]);
+    }
+  }
+  return null;
+}
 
 async function loadAll(){
   // load table rows (paged)
@@ -406,6 +503,15 @@ async function loadAll(){
     next = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
   }
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
+
+  // indexes used to attach menu rows to the right branch
+  venuesByKey = new Map();
+  venuesByName = new Map();
+  venues.forEach(v => {
+    const k = vKey(v), n = normTxt(v.name);
+    (venuesByKey.get(k)  || venuesByKey.set(k, []).get(k)).push(v);
+    (venuesByName.get(n) || venuesByName.set(n, []).get(n)).push(v);
+  });
 
   // Menu Details is a flat log of what has already been ordered / eaten:
   // Venue | Location | Vendor | Section | Item
@@ -428,16 +534,21 @@ async function loadAll(){
         item:    v[4]!=null ? String(v[4]) : ''
       };
     }).filter(r => r.venue);
+    // Attach each logged item to a specific venue row rather than to a bare
+    // name, so branches of the same chain no longer pool their menus.
     menus = {};
+    orphanMenuRows = [];
     menuRows.forEach(r => {
-      if(!menus[r.venue]) menus[r.venue] = {};
+      r.vkey = resolveMenuVenue(r);
+      if(!r.vkey){ orphanMenuRows.push(r); return; }
+      if(!menus[r.vkey]) menus[r.vkey] = {};
       const sec = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
-      if(!menus[r.venue][sec]) menus[r.venue][sec] = [];
-      if(r.item) menus[r.venue][sec].push(r.item);
+      if(!menus[r.vkey][sec]) menus[r.vkey][sec] = [];
+      if(r.item) menus[r.vkey][sec].push(r.item);
     });
   }catch(e){
     console.warn('menu load failed', e);
-    menuRows = []; menus = {};
+    menuRows = []; menus = {}; orphanMenuRows = [];
     window.__menuLoadError = e.message;
   }
 }
@@ -465,11 +576,11 @@ function fmtDist(d){
 function matches(v){
   if(state.category && (v.category||'').trim().toLowerCase() !== state.category.trim().toLowerCase()) return false;
   if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
-  // name only. Category has its own picker, and everything ordered has its own
-  // search on the "ordered" page; folding them in here made the list noisy.
   if(state.query){
-    const q = state.query.trim().toLowerCase();
-    if(q && !(v.name||'').toLowerCase().includes(q)) return false;
+    const q = state.query.toLowerCase();
+    const eaten = menus[vKey(v)] ? Object.entries(menus[vKey(v)]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';
+    const hay = [v.name, v.category, v.location, v.notes, v.toOrder, eaten].filter(Boolean).join(' ').toLowerCase();
+    if(!hay.includes(q)) return false;
   }
   return true;
 }
@@ -477,12 +588,12 @@ function matches(v){
 // re-read and re-match immediately before writing.
 async function resolveVenue(v){
   await loadAll();
-  return venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
-      || venues.find(x => x.name === v.name)
-      || null;
+  const m = matchVenue(v);
+  if(!m && venues.some(x => vKey(x) === vKey(v))) throw ambiguityError(v);
+  return m;
 }
 function hasMenu(v){
-  const m = menus[v.name];
+  const m = menus[vKey(v)];
   return !!(m && Object.keys(m).length);
 }
 function ratingBadgeClass(r){
@@ -578,15 +689,64 @@ function render(){
   }
 }
 
-/* The search box has no dropdown of its own: the result list below already
-   shows every match, and it searches name, category, location, notes, To Order
-   and everything ordered there. Enter just dismisses the keyboard. */
+const suggestBox = document.getElementById('suggestBox');
+let sugItems = [], sugSel = -1;
+
+function hideSuggest(){ suggestBox.classList.remove('open'); suggestBox.innerHTML=''; sugItems=[]; sugSel=-1; }
+
+function showSuggest(q){
+  q = q.trim().toLowerCase();
+  if(q.length < 2){ hideSuggest(); return; }
+  // rank: name prefix > start of any word in the name > anywhere in the name
+  // > category/location. The old loop stopped early and only ever looked at the
+  // very start of the name, so a second word stopped matching anything.
+  const starts = [], words = [], contains = [], meta = [];
+  for(const v of venues){
+    const n = (v.name||'').toLowerCase();
+    if(!n) continue;
+    if(n.startsWith(q)) starts.push(v);
+    else if(n.split(/[^a-z0-9]+/).some(w => w && w.startsWith(q))) words.push(v);
+    else if(n.includes(q)) contains.push(v);
+    else if(((v.category||'') + ' ' + (v.location||'')).toLowerCase().includes(q)) meta.push(v);
+    if(starts.length >= 8) break;
+  }
+  sugItems = starts.concat(words, contains, meta).slice(0, 8);
+  if(!sugItems.length){ hideSuggest(); return; }
+  suggestBox.innerHTML = sugItems.map((v,i) => `<div class="sug" data-i="${i}">${escapeHtml(v.name)}<small>${escapeHtml([v.category, v.location].filter(Boolean).join(' \u00b7 '))}</small></div>`).join('');
+  suggestBox.querySelectorAll('.sug').forEach(el => {
+    el.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      const v = sugItems[parseInt(el.dataset.i,10)];
+      hideSuggest();
+      openDetail(v);
+    });
+  });
+  sugSel = -1;
+  suggestBox.classList.add('open');
+}
+
 document.getElementById('searchBox').addEventListener('input', e => {
-  state.query = e.target.value; state.shown = 60; render();
+  state.query = e.target.value; state.shown=60; render();
+  showSuggest(e.target.value);
 });
 document.getElementById('searchBox').addEventListener('keydown', e => {
-  if(e.key === 'Enter' || e.key === 'Escape') e.target.blur();
+  if(!sugItems.length) return;
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    e.preventDefault();
+    sugSel += (e.key === 'ArrowDown' ? 1 : -1);
+    if(sugSel < 0) sugSel = sugItems.length - 1;
+    if(sugSel >= sugItems.length) sugSel = 0;
+    suggestBox.querySelectorAll('.sug').forEach((el,i) => el.classList.toggle('sel', i === sugSel));
+  } else if(e.key === 'Enter'){
+    const v = sugSel >= 0 ? sugItems[sugSel] : sugItems[0];
+    hideSuggest();
+    e.target.blur();
+    openDetail(v);
+  } else if(e.key === 'Escape'){
+    hideSuggest();
+  }
 });
+document.getElementById('searchBox').addEventListener('blur', () => setTimeout(hideSuggest, 120));
 document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; syncCategoryUI(); render(); });
 document.getElementById('catClear').addEventListener('click', clearCategory);
 document.querySelectorAll('.chip[data-rating]').forEach(chip => {
@@ -630,6 +790,7 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
   document.getElementById('nearChip').textContent='nearest';
   syncCategoryUI();
+  hideSuggest();
   render();
 });
 
@@ -639,7 +800,7 @@ const formSheet = document.getElementById('formSheet');
 const menuFormSheet = document.getElementById('menuFormSheet');
 
 function openDetail(v){
-  const eaten = menus[v.name] || {};
+  const eaten = menus[vKey(v)] || {};
   const itemCount = Object.values(eaten).reduce((n,a)=>n+a.length,0);
   const wants = String(v.toOrder||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
   const wantHtml = '<div class="field"><label>To Order</label>' +
@@ -687,8 +848,7 @@ function openDetail(v){
           await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
         }
         await loadAll(); populateCategories(); render();
-        const fresh = venues.find(x => x.name === v.name) || v;
-        openMenuPage(fresh);
+        openMenuPage(matchVenue(v) || v);
       });
     });
   });
@@ -706,8 +866,7 @@ function openDetail(v){
       delete rec.index;
       await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
       await loadAll();
-      const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
-                 || venues.find(x => x.name === v.name);
+      const fresh = matchVenue(v);
       if(fresh) fresh.toOrder = next;   // same reason as the rating: our write wins
       populateCategories(); render();
       openDetail(fresh || Object.assign({}, v, { toOrder: next }));
@@ -731,21 +890,20 @@ function openDetail(v){
       render();
 
       try{
-        const body = { values: [objToRow(Object.assign({}, v, { rating: next }))] };
         const rowPath = i => `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${i})`;
-        try{
-          await graph('PATCH', rowPath(v.index), body);
-        }catch(e){
-          const cur = await resolveVenue(v);          // index moved - re-find and retry
-          if(!cur) throw new Error('row not found');
-          await graph('PATCH', rowPath(cur.index), body);
-        }
+        // Always re-read and re-match first. Writing to the cached index could
+        // land on a different venue once rows had shifted, and rebuilding the
+        // row from the stale in-memory copy could roll back someone else's
+        // edit to notes or To Order.
+        const cur = await resolveVenue(v);
+        if(!cur) throw new Error('row not found');
+        await graph('PATCH', rowPath(cur.index),
+          { values: [objToRow(Object.assign({}, cur, { rating: next }))] });
         // The write succeeded. Re-read only to re-sync the row index — Graph can
         // still hand back the pre-write value for a moment, and trusting that
         // read is what used to wipe a rating set right after a search.
         await loadAll();
-        const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
-                   || venues.find(x => x.name === v.name);
+        const fresh = matchVenue(v);
         if(fresh){
           v.index = fresh.index;
           fresh.rating = next;          // our write wins over a stale read
@@ -783,12 +941,13 @@ function openDetail(v){
       render();
     });
   });
+  hideSuggest();
   overlay.classList.add('open');
   detailSheet.classList.add('open');
 }
 function closeDetail(){ overlay.classList.remove('open'); detailSheet.classList.remove('open'); lastPickPool = 0; }
 document.getElementById('closeDetail').addEventListener('click', closeDetail);
-overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); closeMenuPage(); closeLog(); });
+overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuForm(); closeMenuPage(); closeLog(); closeDiag(); });
 
 let lastPickPool = 0;
 let editingVenue = null;
@@ -854,7 +1013,7 @@ function renderMenuPage(){
   if(!v) return;
   // build flat rows straight from menuRows so each row keeps its real table index
   const rows = menuRows
-    .filter(r => r.venue === v.name && r.item && r.item !== '(no items recorded)')
+    .filter(r => r.vkey === vKey(v) && r.item && r.item !== '(no items recorded)')
     .map(r => ({ index: r.index, vendor: r.vendor || '', cat: r.section || (r.vendor ? '' : 'Other'), item: r.item }))
     .sort((a,b) => a.vendor.localeCompare(b.vendor) || a.cat.localeCompare(b.cat) || a.item.localeCompare(b.item));
   const cats = new Set(rows.map(r => r.vendor + '|' + r.cat));
@@ -880,15 +1039,20 @@ function renderMenuPage(){
     });
   }
   body.innerHTML = html;
-  // tap a row (not the x) to edit it on its own page
+  // tap a row (not the x) to load it into the inputs for editing
   body.querySelectorAll('.mp-row').forEach(rowEl => {
     rowEl.addEventListener('click', e => {
       if(e.target.tagName === 'BUTTON') return;
       const idx = parseInt(rowEl.dataset.index, 10);
-      const live = menuRows.find(r => r.index === idx && r.venue === v.name);
+      const live = menuRows.find(r => r.index === idx && r.vkey === vKey(v));
       if(!live) return;
-      closeMenuPage();
-      openMenuForm(v, live);
+      editingLogRow = { venue: live.venue, vkey: live.vkey, vendor: live.vendor, section: live.section, item: live.item };
+      document.getElementById('mp_vendor').value = live.vendor;
+      document.getElementById('mp_section').value = live.section;
+      document.getElementById('mp_item').value = live.item;
+      document.getElementById('mp_add').textContent = 'save';
+      document.getElementById('mp_cancel').style.display = '';
+      document.getElementById('mp_item').focus();
     });
   });
   body.querySelectorAll('.mp-row button').forEach(btn => {
@@ -900,22 +1064,22 @@ function renderMenuPage(){
       await withBusy(async () => {
         // re-read the table so the index is current, then match on content
         await loadAll();
-        const live = menuRows.find(r => r.index === idx && r.venue === v.name && r.item === item)
-                  || menuRows.find(r => r.venue === v.name && r.item === item);
+        const live = menuRows.find(r => r.index === idx && r.vkey === vKey(v) && r.item === item)
+                  || menuRows.find(r => r.vkey === vKey(v) && r.item === item);
         if(!live){ alert('That item is no longer in the sheet.'); render(); renderMenuPage(); return; }
         await deleteTableRow(MENU_SHEET, MENU_TABLE, live.index);
         await loadAll();
         // if nothing is left, clear the flag on tab 1
-        const stillHas = menuRows.some(r => r.venue === v.name && r.item);
-        const cur = venues.find(x => x.name === v.name);
+        const stillHas = menuRows.some(r => r.vkey === vKey(v) && r.item);
+        const cur = matchVenue(v);
         if(cur && !stillHas && cur.hasMenuDetail === 'x'){
           const rec = Object.assign({}, cur, { hasMenuDetail: '' });
           delete rec.index;
           await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
           await loadAll();
         }
-        menuPageVenue = venues.find(x => x.name === v.name) || v;
-        populateCategories(); render(); renderMenuPage();
+        menuPageVenue = matchVenue(v) || v;
+        populateCategories(); render(); refreshSectionList(); renderMenuPage();
       });
     });
   });
@@ -954,29 +1118,6 @@ function attachAutocomplete(input, getOptions, opts){
   if(!input || input._ac) return;
   input._ac = true;
   opts = opts || {};
-  // inlineOnly: complete in the field, never open a list over the page
-  if(opts.inlineOnly){
-    let skipI = false;
-    input.addEventListener('keydown', e => {
-      if(e.key === 'Backspace' || e.key === 'Delete'){ skipI = true; return; }
-      if(e.key === 'Tab' || e.key === 'ArrowRight' || e.key === 'Enter'){
-        const a = input.selectionStart, b = input.selectionEnd;
-        if(b > a){ input.setSelectionRange(b, b); if(e.key !== 'Enter') e.preventDefault(); }
-      }
-    });
-    input.addEventListener('input', () => {
-      const wasSkip = skipI; skipI = false;
-      const val = input.value;
-      if(wasSkip || !val) return;
-      if(input.selectionStart !== val.length) return;
-      const hit = (getOptions() || []).find(o =>
-        o.toLowerCase().startsWith(val.toLowerCase()) && o.length > val.length);
-      if(!hit) return;
-      input.value = hit;
-      try{ input.setSelectionRange(val.length, hit.length); }catch(err){}
-    });
-    return;
-  }
   let wrap = input.parentNode;
   if(!wrap || !wrap.classList.contains('ac-wrap')){
     const w = document.createElement('div');
@@ -1085,15 +1226,9 @@ function sectionOptions(){
   return out;
 }
 
-/* Vendors are a stadium / food-hall idea, not a restaurant one: a normal venue
-   has no vendors recorded and should never be asked for one. A venue that
-   already has any vendor on file gets the field automatically; anywhere else
-   it stays behind a "+ vendor" link. */
-function venueVendors(name){
-  return distinctValues(r => r.vendor, menuRows.filter(r => r.venue === name)).map(x => x.label);
-}
-function isMultiVendorVenue(name){
-  return venueVendors(name).length > 0;
+function refreshSectionList(){
+  attachAutocomplete(document.getElementById('mp_section'), sectionOptions);
+  attachAutocomplete(document.getElementById('mp_vendor'), vendorOptions);
 }
 
 /* tap-to-fill shortcuts under the Add/Edit fields */
@@ -1113,6 +1248,8 @@ function fillQuick(wrapId, input, options){
 
 function openMenuPage(v){
   menuPageVenue = v;
+  resetLogInputs();
+  refreshSectionList();
   renderMenuPage();
   overlay.classList.add('open');
   menuPageSheet.classList.add('open');
@@ -1123,11 +1260,61 @@ document.getElementById('backToDetail').addEventListener('click', () => {
   const v = menuPageVenue;
   closeMenuPage();
   if(!v) return;
-  const fresh = venues.find(x => x.name === v.name && (x.location||'') === (v.location||''))
-             || venues.find(x => x.name === v.name) || v;
-  openDetail(fresh);
+  openDetail(matchVenue(v) || v);
 });
 
+let editingLogRow = null;
+function resetLogInputs(){
+  editingLogRow = null;
+  document.getElementById('mp_vendor').value = '';
+  document.getElementById('mp_section').value = '';
+  document.getElementById('mp_item').value = '';
+  document.getElementById('mp_add').textContent = 'add';
+  document.getElementById('mp_cancel').style.display = 'none';
+}
+async function addOrderedItem(){
+  const v = menuPageVenue;
+  if(!v) return;
+  // any text is accepted - the shortlist is only a typing shortcut
+  const vendor = document.getElementById('mp_vendor').value.trim();
+  const sec = document.getElementById('mp_section').value.trim() || (vendor ? '' : 'Other');
+  const item = document.getElementById('mp_item').value.trim();
+  if(!item){ alert('Enter an item.'); return; }
+  if(editingLogRow){
+    const old = editingLogRow;
+    await withBusy(async () => {
+      await loadAll();
+      const live = menuRows.find(r => r.vkey === old.vkey && r.vendor === old.vendor && r.section === old.section && r.item === old.item);
+      if(!live){ alert('That row is no longer in the sheet.'); resetLogInputs(); renderMenuPage(); return; }
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${live.index})`,
+        { values: [[v.name, v.location||'', vendor, sec, item]] });
+      await loadAll(); render();
+      resetLogInputs();
+      renderMenuPage();
+    });
+    return;
+  }
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: [[v.name, v.location||'', vendor, sec, item]] });
+    if(v.hasMenuDetail !== 'x'){
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
+    }
+    await loadAll(); populateCategories(); render(); refreshSectionList();
+    menuPageVenue = matchVenue(v) || v;
+    document.getElementById('mp_item').value = '';
+    document.getElementById('mp_item').focus();
+    renderMenuPage();
+  });
+}
+document.getElementById('mp_add').addEventListener('click', addOrderedItem);
+document.getElementById('mp_cancel').addEventListener('click', resetLogInputs);
+document.getElementById('mp_item').addEventListener('keydown', e => { if(e.key==='Enter') addOrderedItem(); });
 document.getElementById('mp_bulk').addEventListener('click', () => {
   const v = menuPageVenue;
   closeMenuPage();
@@ -1166,73 +1353,89 @@ function renderLog(){
     });
   });
 }
-function openLog(){
-  document.getElementById('logSearch').value = '';
+/* add an ordered item from the global log, without hunting for the place first */
+async function addLogItem(){
+  const nameIn = document.getElementById('lg_venue');
+  const secIn  = document.getElementById('lg_section');
+  const itemIn = document.getElementById('lg_item');
+  const name = nameIn.value.trim();
+  const sec  = secIn.value.trim() || 'Other';
+  const item = itemIn.value.trim();
+  if(!name){ alert('Which place?'); nameIn.focus(); return; }
+  if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
+  const hits = venues.filter(x => normTxt(x.name) === normTxt(name));
+  if(!hits.length){ alert('No place called "' + name + '" yet — add it with + first.'); nameIn.focus(); return; }
+  if(hits.length > 1){
+    const where = hits.map(x => x.location || 'no location').join(', ');
+    alert('More than one place is called "' + name + '" (' + where + '). Open the right one from the list and log it there.');
+    nameIn.focus(); return;
+  }
+  const v = hits[0];
+  await withBusy(async () => {
+    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+      { values: [[v.name, v.location||'', '', sec, item]] });
+    if(v.hasMenuDetail !== 'x'){
+      const cur = await resolveVenue(v);
+      if(cur && cur.hasMenuDetail !== 'x'){
+        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+        delete rec.index;
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+      }
+    }
+    await loadAll(); populateCategories(); render();
+    nameIn.value = v.name;           // stay on the same place for the next item
+    itemIn.value = '';
+    renderLog();
+    itemIn.focus();
+  });
+}
+document.getElementById('lg_add').addEventListener('click', addLogItem);
+document.getElementById('lg_item').addEventListener('keydown', e => { if(e.key === 'Enter') addLogItem(); });
+
+function openLog(prefillVenue){
+  document.getElementById('logSearch').value='';
+  document.getElementById('lg_venue').value = prefillVenue || '';
+  document.getElementById('lg_section').value = '';
+  document.getElementById('lg_item').value = '';
+  attachAutocomplete(document.getElementById('lg_venue'), venueNameOptions, { next: 'lg_section' });
+  attachAutocomplete(document.getElementById('lg_section'), sectionOptions, { next: 'lg_item' });
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
 }
 function closeLog(){ overlay.classList.remove('open'); logSheet.classList.remove('open'); }
-document.getElementById('logLink').addEventListener('click', openLog);
+document.getElementById('logLink').addEventListener('click', () => openLog());
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
 
-/* ====== Menu form: log new items, or edit one existing row ====== */
+/* ====== Menu edit form ====== */
 let menuEditingVenue = null;
-let menuEditingRow = null;      // set when a single logged row is being edited
 
 function addMenuRow(key, val){
   const wrap = document.getElementById('menuRows');
   const row = document.createElement('div');
   row.className = 'menurow';
   row.innerHTML = `
-    <input class="mkey" placeholder="Category (e.g. Appetizers)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false">
+    <div class="ac-wrap"><input class="mkey" placeholder="Section (e.g. Appetizers)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false"></div>
     <input class="mval" placeholder="Item you ate" value="${escapeHtml(val||'')}">
     <button class="rm" type="button">&times;</button>
   `;
   row.querySelector('.rm').addEventListener('click', () => row.remove());
   wrap.appendChild(row);
-  attachAutocomplete(row.querySelector('.mkey'), sectionOptions, { inlineOnly: true });
+  attachAutocomplete(row.querySelector('.mkey'), sectionOptions);
 }
 
-function showVendorField(show){
-  document.getElementById('mf_vendorField').style.display = show ? '' : 'none';
-  document.getElementById('mf_vendorLink').style.display  = show ? 'none' : '';
-}
-
-function openMenuForm(v, row){
+function openMenuForm(v){
   menuEditingVenue = v;
-  menuEditingRow = row || null;
+  document.getElementById('menuFormTitle').textContent = 'Log eaten — ' + v.name;
   const wrap = document.getElementById('menuRows');
   wrap.innerHTML = '';
-  document.getElementById('menuFormTitle').textContent =
-    (row ? 'Edit — ' : 'Log eaten — ') + v.name;
-  document.getElementById('addMenuRowBtn').style.display = row ? 'none' : '';
-
-  const vend = document.getElementById('mf_vendor');
-  vend.value = row ? (row.vendor || '') : '';
-  attachAutocomplete(vend, () => {
-    const mine = venueVendors(v.name);
-    return mine.length ? mine : vendorOptions();
-  }, { inlineOnly: true });
-  // only stadiums / food halls ever see this
-  showVendorField(!!(vend.value || isMultiVendorVenue(v.name)));
-
-  if(row) addMenuRow(row.section, row.item);
-  else { addMenuRow('', ''); addMenuRow('', ''); }
+  addMenuRow('', ''); addMenuRow('', '');
   overlay.classList.add('open');
   menuFormSheet.classList.add('open');
 }
-function closeMenuForm(){
-  overlay.classList.remove('open');
-  menuFormSheet.classList.remove('open');
-  menuEditingVenue = null; menuEditingRow = null;
-}
+function closeMenuForm(){ overlay.classList.remove('open'); menuFormSheet.classList.remove('open'); menuEditingVenue=null; }
 document.getElementById('addMenuRowBtn').addEventListener('click', () => addMenuRow('', ''));
-document.getElementById('mf_vendorLink').addEventListener('click', () => {
-  showVendorField(true);
-  document.getElementById('mf_vendor').focus();
-});
 document.getElementById('closeMenuForm').addEventListener('click', closeMenuForm);
 document.getElementById('backToMenuPage').addEventListener('click', () => {
   const v = menuEditingVenue;
@@ -1244,35 +1447,15 @@ document.getElementById('cancelMenuForm').addEventListener('click', closeMenuFor
 document.getElementById('saveMenuForm').addEventListener('click', async () => {
   const v = menuEditingVenue;
   if(!v) return;
-  const vendor = document.getElementById('mf_vendorField').style.display === 'none'
-    ? '' : document.getElementById('mf_vendor').value.trim();
   const pairs = Array.from(document.querySelectorAll('#menuRows .menurow')).map(r => ({
-    section: r.querySelector('.mkey').value.trim() || (vendor ? '' : 'Other'),
+    section: r.querySelector('.mkey').value.trim() || 'Other',
     item:    r.querySelector('.mval').value.trim()
   })).filter(p => p.item);
   if(!pairs.length){ alert('Add at least one item.'); return; }
-
-  if(menuEditingRow){
-    const old = menuEditingRow;
-    const p = pairs[0];
-    closeMenuForm();
-    await withBusy(async () => {
-      await loadAll();
-      const live = menuRows.find(r => r.venue === old.venue && r.vendor === old.vendor
-                                   && r.section === old.section && r.item === old.item);
-      if(!live){ alert('That row is no longer in the sheet.'); openMenuPage(v); return; }
-      await graph('PATCH', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows/itemAt(index=${live.index})`,
-        { values: [[v.name, v.location||'', vendor, p.section, p.item]] });
-      await loadAll(); populateCategories(); render();
-      openMenuPage(venues.find(x => x.name === v.name) || v);
-    });
-    return;
-  }
-
   closeMenuForm();
   await withBusy(async () => {
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-      { values: pairs.map(p => [v.name, v.location||'', vendor, p.section, p.item]) });
+      { values: pairs.map(p => [v.name, v.location||'', '', p.section, p.item]) });
     if(v.hasMenuDetail !== 'x'){
       const cur = await resolveVenue(v);
       if(cur && cur.hasMenuDetail !== 'x'){
@@ -1282,8 +1465,7 @@ document.getElementById('saveMenuForm').addEventListener('click', async () => {
       }
     }
     await loadAll(); populateCategories(); render();
-    const fresh = venues.find(x => x.name === v.name) || v;
-    openMenuPage(fresh);
+    openMenuPage(matchVenue(v) || v);
   });
 });
 
@@ -1335,7 +1517,7 @@ async function withBusy(fn){
     await fn();
   }catch(e){
     console.error(e);
-    alert('Something went wrong talking to OneDrive: ' + e.message);
+    alert(e && e.userFacing ? e.message : 'Something went wrong talking to OneDrive: ' + e.message);
   }finally{
     fab.disabled = false;
   }
@@ -1404,9 +1586,84 @@ function showGateError(msg){
 }
 
 /* ====== VERSION CHECK ====== */
+/* ====== DATA CHECK ======
+   Surfaces the things the app cannot resolve on its own: rows that are
+   indistinguishable from each other, logged items pointing at a venue that
+   is not in the list, and Has Menu Detail flags that no longer match the
+   log. The flag drift is repairable from here; the rest need a human
+   decision in the workbook. */
+function findDataIssues(){
+  const dupes = [];
+  const seen = new Map();
+  venues.forEach(v => {
+    const k = vKey(v);
+    if(seen.has(k)){ if(dupes.indexOf(k) < 0) dupes.push(k); }
+    else seen.set(k, v);
+  });
+  const logged = new Set(menuRows.filter(r => r.vkey && r.item).map(r => r.vkey));
+  const falseFlags = venues.filter(v => (v.hasMenuDetail||'').trim() === 'x' && !logged.has(vKey(v)));
+  const missingFlags = venues.filter(v => (v.hasMenuDetail||'').trim() !== 'x' && logged.has(vKey(v)));
+  const noGeo = venues.filter(v => !v.lat || !v.lng);
+  return { dupes, falseFlags, missingFlags, noGeo };
+}
+function renderDiag(){
+  const d = findDataIssues();
+  const line = (n, label, detail) =>
+    '<div class="field"><label>' + label + '</label><div>' + n +
+    (detail ? ' <span style="color:var(--muted);">' + escapeHtml(detail) + '</span>' : '') + '</div></div>';
+  const sample = arr => arr.slice(0,6).map(v => (v.name||'') + (v.location ? ' (' + v.location + ')' : '')).join('; ')
+    + (arr.length > 6 ? ' …' : '');
+  const orphanSample = orphanMenuRows.slice(0,6)
+    .map(r => r.venue + (r.location ? ' (' + r.location + ')' : '')).join('; ')
+    + (orphanMenuRows.length > 6 ? ' …' : '');
+  document.getElementById('diagSub').textContent =
+    venues.length + ' venues, ' + menuRows.length + ' logged items';
+  document.getElementById('diagBody').innerHTML =
+    line(d.dupes.length, 'Identical duplicate rows', d.dupes.length ? 'edits to these are blocked until one is removed' : '') +
+    line(orphanMenuRows.length, 'Logged items with no matching venue', orphanSample) +
+    line(d.falseFlags.length, 'Flagged but nothing logged', sample(d.falseFlags)) +
+    line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
+    line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest');
+  const btn = document.getElementById('diagFixFlags');
+  const n = d.falseFlags.length + d.missingFlags.length;
+  btn.textContent = n ? 'Repair ' + n + ' menu flag' + (n===1?'':'s') : 'Menu flags are correct';
+  btn.disabled = !n;
+}
+function openDiag(){
+  renderDiag();
+  overlay.classList.add('open');
+  document.getElementById('diagSheet').classList.add('open');
+}
+function closeDiag(){
+  overlay.classList.remove('open');
+  document.getElementById('diagSheet').classList.remove('open');
+}
+document.getElementById('closeDiag').addEventListener('click', closeDiag);
+document.getElementById('diagFixFlags').addEventListener('click', async () => {
+  await withBusy(async () => {
+    await loadAll();
+    const d = findDataIssues();
+    const todo = d.falseFlags.map(v => [v, '']).concat(d.missingFlags.map(v => [v, 'x']));
+    if(!todo.length){ renderDiag(); return; }
+    if(!confirm('Update Has Menu Detail on ' + todo.length + ' row' + (todo.length===1?'':'s') + '?')) return;
+    for(const [v, flag] of todo){
+      const cur = matchVenue(v);
+      if(!cur) continue;                      // duplicate or vanished - skip, never guess
+      const rec = Object.assign({}, cur, { hasMenuDetail: flag });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+    }
+    await loadAll(); render(); renderDiag();
+  });
+});
+
 async function checkVersion(){
   const line = document.getElementById('verLine');
-  if(line) line.textContent = 'build ' + APP_VERSION;
+  if(line){
+    line.innerHTML = 'build ' + APP_VERSION + ' &middot; <a id="diagLink">data check</a>';
+    const dl = document.getElementById('diagLink');
+    if(dl) dl.addEventListener('click', openDiag);
+  }
   let latest;
   try{
     const res = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
@@ -1418,7 +1675,10 @@ async function checkVersion(){
   // a newer build exists - reload once, bypassing the cached copy
   if(sessionStorage.getItem('fd_reloaded_for') === latest){
     if(line) line.innerHTML = 'build ' + APP_VERSION +
-      ' &mdash; version ' + latest + ' available. <a id="hardReload">reload</a>';
+      ' &mdash; version ' + latest + ' available. <a id="hardReload">reload</a>' +
+      ' &middot; <a id="diagLink2">data check</a>';
+    const dl2 = document.getElementById('diagLink2');
+    if(dl2) dl2.addEventListener('click', openDiag);
     const a = document.getElementById('hardReload');
     if(a) a.addEventListener('click', () => {
       location.replace(location.pathname + '?v=' + encodeURIComponent(latest));
