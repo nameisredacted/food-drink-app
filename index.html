@@ -412,7 +412,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-21";
+const APP_VERSION = "2026.09.06-22";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -677,6 +677,9 @@ function fmtDist(d){
 function matches(v){
   if(state.category && (v.category||'').trim().toLowerCase() !== state.category.trim().toLowerCase()) return false;
   if(state.ratings.size && !state.ratings.has((v.rating||'').trim())) return false;
+  // favourites are places to go back to: a closed one has no business there,
+  // though it still shows in an unfiltered list and in search as a record
+  if(state.ratings.has('y') && isClosed(v)) return false;
   if(state.query){
     const q = state.query.toLowerCase();
     const eaten = menus[vKey(v)] ? Object.entries(menus[vKey(v)]).map(([sec,items]) => sec+' '+items.join(' ')).join(' ') : '';

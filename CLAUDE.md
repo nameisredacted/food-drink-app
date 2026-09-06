@@ -176,10 +176,17 @@ Chat threads are disposable; this file is not. The routine:
    Opening line: *"read CLAUDE.md in food-drink-app, then …"*. That is the whole handoff.
 3. **Run the tests before and after any change**: `node tests/smoke.mjs` (`npm i jsdom`
    once). They stub MSAL and Graph, so the live workbook is never touched.
-4. **Verify every write.** A `device_commit_files` call has reported success while the
+4. **Verify every write, and give each write a fresh staged filename.** The bridge
+   appears to cache by staged path: committing a second, different file from the *same*
+   staged path silently delivered the OLD bytes (seen twice on 2026-09-06 — index.html and
+   CLAUDE.md). Write to a new name (`index-v22.html`) each time, then stage the file back
+   from the Mac and compare `md5sum` before committing in git.
+5. **Verify every write.** A `device_commit_files` call has reported success while the
    Mac still held the old bytes. After writing a file to the Mac, stage it back and compare
    (`md5sum`) before committing it in git; only then push.
-5. **Push**: GitHub Desktop, per the convention above. The cloud sandbox's git proxy
+6. **Push**: GitHub Desktop, per the convention above. If its change list shows 0 files
+   while the tree really has changes, or its menus come back disabled, it has lost track —
+   click it to the front once and it re-syncs. The cloud sandbox's git proxy
    refuses credentials for this repo unless `nameisredacted/food-drink-app` is added to
    the session's authorized sources — do that and pushes can happen straight from the
    session instead.

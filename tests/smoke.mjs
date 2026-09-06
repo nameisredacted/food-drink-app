@@ -366,6 +366,36 @@ const check = (name, fn) => {
   });
 }
 
+/* ---------- closed places are not favourites ---------- */
+{
+  const a = app({ venues: [
+    ['Bellota','Spanish','San Francisco, CA','','y','','','','','','','','closed 2026'],
+    ['Sociale','Italian','San Francisco, CA','','y','','','','','','','',''],
+    ['Bar Brucato','Bar','San Francisco, CA','','','','','','','','','','closed Jun 2026']
+  ] });
+  await a.settle(400);
+  const names = () => [...a.w.document.querySelectorAll('#list .item-name')].map(e => e.textContent.replace('closed','').trim());
+  check('the y filter hides closed places', () => {
+    a.w.eval("state.ratings = new Set(['y']); render();");
+    const shown = names();
+    if(shown.includes('Bellota')) throw new Error('closed favourite still listed: ' + JSON.stringify(shown));
+    if(!shown.includes('Sociale')) throw new Error('open favourite missing: ' + JSON.stringify(shown));
+  });
+  check('an unfiltered search still finds the record', () => {
+    a.w.eval("state.ratings = new Set(); state.query = 'bellota'; render();");
+    if(!names().includes('Bellota')) throw new Error('record lost from search: ' + JSON.stringify(names()));
+  });
+  check('the dice never picks a closed place', () => {
+    a.w.eval("state.query = ''; state.ratings = new Set(); render();");
+    for(let i = 0; i < 40; i++){
+      a.click(a.$('diceChip'));
+      const title = a.$('detailContent').querySelector('h2').textContent;
+      if(/Bellota|Bar Brucato/.test(title)) throw new Error('dice picked ' + title);
+    }
+    a.w.eval('closeDetail()');
+  });
+}
+
 console.log(results.join('\n'));
 console.log(failures ? `\n${failures} failing` : `\nall ${results.length} checks passed`);
 process.exit(failures ? 1 : 0);
