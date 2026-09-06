@@ -221,7 +221,7 @@ select.on{color:#111;font-weight:700;}
 #lg_multi .locpick{display:flex;align-items:center;gap:9px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--hair);}
 #lg_multi .locpick:last-child{border-bottom:none;}
 #lg_multi .chainrow,#lg_new .chainrow{display:flex;align-items:center;gap:8px;font-size:13px;color:#666;margin-top:8px;}
-#lg_newLoc{margin-top:10px;}
+#lg_newLoc{margin-top:10px;font-size:22px;line-height:1;text-decoration:none;padding:2px 6px;}
 #lg_multi .addline{margin-top:8px;padding-top:0;border-top:none;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
@@ -322,7 +322,7 @@ select.on{color:#111;font-weight:700;}
     <div class="ac-wrap"><input id="lg_what" placeholder="what" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <button id="lg_add" type="button">add</button>
   </div>
-  <span class="bulklink" id="lg_newLoc">+ another location, or a place that isn't on the list</span>
+  <span class="bulklink plus" id="lg_newLoc" title="add this place, or another location of it">+</span>
   <div id="lg_new" style="display:none;">
     <div class="newmsg" id="lg_newMsg"></div>
     <div class="addline">
@@ -387,7 +387,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-9";
+const APP_VERSION = "2026.09.06-10";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1673,28 +1673,31 @@ document.getElementById('lg_multiCancel').addEventListener('click', () => {
    filtered by — location, and cuisine if it is worth saying — and writes the
    place and the item together. */
 let pendingNewPlace = null;
+/* The line above the fields, and the brand question under them, both describe
+   whatever name is in "where" right now — edit the name and they follow. */
+function describeNewPlace(name){
+  const kin = brandRows(name);
+  const where = kin.map(v => v.location || 'no location').join(', ');
+  document.getElementById('lg_newMsg').textContent = kin.length
+    ? '"' + name + '" is already on the list in ' + where + ' — add another one?'
+    : 'nothing called "' + name + '" yet — add it?';
+  const row = document.getElementById('lg_brandRow');
+  if(kin.length){
+    document.getElementById('lg_brandTxt').textContent = 'same brand as the one in ' + where;
+    if(row.style.display === 'none') document.getElementById('lg_sameBrand').checked = true;
+    row.style.display = '';
+  } else {
+    row.style.display = 'none';
+  }
+}
 function showNewPlace(name){
   hideMultiPlace();
   const again = pendingNewPlace && normTxt(pendingNewPlace) === normTxt(name);
   pendingNewPlace = name;
-  document.getElementById('lg_newMsg').textContent = 'nothing called "' + name + '" yet — add it?';
   const loc = document.getElementById('lg_location');
   const cat = document.getElementById('lg_category');
   if(!again){ loc.value = ''; cat.value = ''; }   // keep what was typed for this same place
-  // same name already on the list? then this is a second location of it, or a
-  // different place that happens to share the name — ask, don't assume
-  const kin = brandRows(name);
-  const row = document.getElementById('lg_brandRow');
-  if(kin.length){
-    document.getElementById('lg_brandTxt').textContent =
-      'same brand as the one in ' + kin.map(v => v.location || 'no location').join(', ');
-    document.getElementById('lg_sameBrand').checked = true;
-    row.style.display = '';
-    document.getElementById('lg_newMsg').textContent =
-      'adding another location of "' + name + '"';
-  } else {
-    row.style.display = 'none';
-  }
+  describeNewPlace(name);
   attachAutocomplete(loc, locationOptions, { typedOnly: true, next: 'lg_category' });
   attachAutocomplete(cat, categoryOptions, { typedOnly: true });
   document.getElementById('lg_new').style.display = '';
@@ -1718,8 +1721,21 @@ async function addPlaceThenLog(){
   if(twin){
     hideNewPlace();
     await withBusy(async () => {
+      // this branch is already on the list: fill in what it is missing, log the
+      // item, and make sure the name reads as a chain if it has other branches
+      if(category && !String(twin.category||'').trim()){
+        const cur = await resolveVenue(twin);
+        if(cur){
+          const rec = Object.assign({}, cur, { category });
+          delete rec.index;
+          await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`,
+            { values: [objToRow(rec)] });
+        }
+      }
       await logItemAt(twin, item);
-      await loadAll(); populateCategories(); render();
+      await loadAll();
+      if(brandRows(name).length > 1) { await markChains([name]); await loadAll(); }
+      populateCategories(); render();
       document.getElementById('lg_what').value = '';
       renderLog();
     });
@@ -1747,6 +1763,12 @@ async function addPlaceThenLog(){
     itemIn.focus();
   });
 }
+document.getElementById('lg_venue').addEventListener('input', () => {
+  if(document.getElementById('lg_new').style.display === 'none') return;
+  const name = document.getElementById('lg_venue').value.trim();
+  pendingNewPlace = name;
+  if(name) describeNewPlace(name);
+});
 document.getElementById('lg_newLoc').addEventListener('click', () => {
   const nameIn = document.getElementById('lg_venue');
   const name = nameIn.value.trim();
