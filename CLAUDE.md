@@ -90,6 +90,23 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
 - 48 rows with no location — fine by design; that group should only ever hold
   single-location places or chains.
 
+## Working on this across sessions
+
+Chat threads are disposable; this file is not. The routine:
+
+1. **Knowledge lives here, not in the thread.** Anything worth surviving — a data-model
+   fact, a convention, a UI decision, an open item — gets written into this file in the
+   same commit as the change that prompted it.
+2. **Start each work block in a fresh Cowork session**, linked to the Mac, with both
+   folders connected: this repo, and the OneDrive `the list/Food + Drink/Claude` folder.
+   Opening line: *"read CLAUDE.md in food-drink-app, then …"*. That is the whole handoff.
+3. **Run the tests before and after any change**: `node tests/smoke.mjs` (`npm i jsdom`
+   once). They stub MSAL and Graph, so the live workbook is never touched.
+4. **Push**: GitHub Desktop, per the convention above. The cloud sandbox's git proxy
+   refuses credentials for this repo unless `nameisredacted/food-drink-app` is added to
+   the session's authorized sources — do that and pushes can happen straight from the
+   session instead.
+
 ## Testing
 
 `node tests/smoke.mjs` (needs `npm i jsdom`). It loads `index.html` in jsdom with MSAL and
