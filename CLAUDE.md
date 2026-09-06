@@ -74,6 +74,22 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
 - `markChains` called `resolveVenue()` (a full `loadAll`) per row. PATCH does not shift row
   indexes, so one read per pass is enough — the 43-row backfill was 43 full table reads.
 
+## Closed places (2026.09.06-21)
+
+`Closed` is the 13th column. Any non-empty value means closed ("closed Jun 2026" reads
+better than an x, and shows on the detail sheet). Closed rows are **never deleted**:
+
+- the list keeps them, name in `--bad` red with a CLOSED tag, sub-line muted red;
+- the detail sheet shows everything but offers no rating, no To Order, no Edit, no Delete —
+  only the ordered history and a `reopen this place` link;
+- the venue's ordered page keeps its items but hides `+ add items` and the row removers;
+- logging against a closed place is refused wherever it is attempted (ordered screen,
+  location picker, the + panel), and the dice never picks one.
+
+`mark as closed` / `reopen this place` on the detail sheet is the only mutation a closed
+row accepts. `KNOWN_CLOSURES` holds the sixteen verified in the sweep below; the data
+check's **Mark closures** button applies them.
+
 ## Data check (repairs, each one-tap with a confirm)
 
 `findDataIssues()` + the buttons in `#diagSheet`:
@@ -91,8 +107,8 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
 ## Closure sweep (started 2026-09-06)
 
 Method: cross-match published closure round-ups against the workbook names first (cheap,
-broad), then verify individual venues. Confirmed closed so far — these rows should be
-retired or marked:
+broad), then verify individual venues. Confirmed closed so far — marked with the Closed
+column, never deleted:
 
 | Row | Location | Rating | Evidence |
 |---|---|---|---|

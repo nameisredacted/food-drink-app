@@ -149,6 +149,14 @@ select{background:#fff;border:none;color:var(--accent);padding:6px 2px;font-size
 main{padding:2px 16px 90px;}
 .item{background:none;border:none;border-bottom:1px solid var(--hair);padding:11px 0;margin:0;}
 .item-name{color:var(--accent);font-weight:400;font-size:15px;}
+/* closed places keep their place in the list, in red, and cannot be edited */
+.item.closed .item-name,#detailContent h2.closed{color:var(--bad);}
+.item.closed .item-sub,.item.closed .toorder{color:#a05a5a;}
+.closedtag{color:var(--bad);font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+           border:1px solid var(--bad);border-radius:3px;padding:0 4px;margin-left:7px;white-space:nowrap;}
+#detailContent .closedline{color:var(--bad);font-size:13px;margin:2px 0 10px;}
+.closedtoggle{background:none;border:none;color:var(--muted);font-size:12px;
+              text-decoration:underline;cursor:pointer;padding:0;margin-top:12px;}
 .item-sub{font-size:12px;color:#999;margin-top:2px;}
 .badge{background:none !important;border-radius:0;font-weight:600;font-size:12px;padding:2px 0;}
 .badge.y{color:var(--good);} .badge.n{color:var(--bad);} .badge.dash{color:#c0c0c0;}
@@ -327,6 +335,7 @@ select.on{color:#111;font-weight:700;}
     <button class="btn ghost" id="diagMergeDupes">Merge duplicates</button>
     <button class="btn ghost" id="diagFixUmbrellas">Fix chain rows</button>
     <button class="btn ghost" id="diagAttachStrays">Attach logged items</button>
+    <button class="btn ghost" id="diagMarkClosed">Mark closures</button>
   </div>
 </div>
 
@@ -403,7 +412,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-20";
+const APP_VERSION = "2026.09.06-21";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -475,12 +484,14 @@ async function deleteTableRow(sheet, table, index){
   }
 }
 
-/* Chain is the 12th column and may not exist in the workbook yet: rows are
-   read and written at the width the table actually has, and the data check
-   adds the column the first time chains are marked. */
-const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain'];
-const CHAIN_COL = 'Chain';
-let mainWidth = COLS.length - 1;   // until the first read says otherwise
+/* The workbook grew two columns after the original eleven: Chain (12th) and
+   Closed (13th). Either may be missing from an older copy, so rows are read and
+   written at the width the table actually has, and the data check adds a column
+   the first time it is needed. */
+const BASE_WIDTH = 11;
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain','closed'];
+const CHAIN_COL = 'Chain', CLOSED_COL = 'Closed';
+let mainWidth = BASE_WIDTH;   // until the first read says otherwise
 
 function rowToObj(rowValues, index){
   const o = { index };
@@ -492,8 +503,17 @@ function objToRow(o){
   // never write more (or fewer) cells than the table actually has
   return row.slice(0, mainWidth).concat(Array(Math.max(0, mainWidth - row.length)).fill(''));
 }
-function hasChainCol(){ return mainWidth >= COLS.length; }
+function hasChainCol(){ return mainWidth >= 12; }
+function hasClosedCol(){ return mainWidth >= 13; }
 function isChain(v){ return String((v && v.chain) || '').trim().toLowerCase() === 'x'; }
+/* Closed places stay on the list - they are history, not clutter - but they are
+   read-only and marked in red. Any non-empty value counts, so "closed 2026" or a
+   date works as well as an x. */
+function isClosed(v){ return !!String((v && v.closed) || '').trim(); }
+function closedNote(v){
+  const t = String((v && v.closed) || '').trim();
+  return (!t || t.toLowerCase() === 'x') ? 'closed' : 'closed · ' + t;
+}
 /* every row carrying this name, whatever the location */
 function brandRows(name){
   return venues.filter(x => normTxt(x.name) === normTxt(name));
@@ -528,6 +548,12 @@ function matchVenue(v){
   const fields = ['address','notes','toOrder','category','rating'];
   const same = cands.filter(x => fields.every(k => (x[k]||'') === (v[k]||'')));
   return same.length === 1 ? same[0] : null;
+}
+function closedError(v){
+  const e = new Error('"' + (v.name||'') + '" is marked closed' +
+    (v.location ? ' (' + v.location + ')' : '') + '. Reopen it first if it is back.');
+  e.userFacing = true;
+  return e;
 }
 function ambiguityError(v){
   const e = new Error('There are two identical rows for "' + (v.name||'') + '"' +
@@ -576,7 +602,7 @@ async function loadAll(){
     next = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
   }
   if(rows.length && Array.isArray(rows[0].values && rows[0].values[0]))
-    mainWidth = Math.max(COLS.length - 1, rows[0].values[0].length);
+    mainWidth = Math.max(BASE_WIDTH, rows[0].values[0].length);
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
 
   // indexes used to attach menu rows to the right branch
@@ -742,10 +768,10 @@ function render(){
   gn.style.display = (state.near && filtered.slice(0,state.shown).some(v => v.geo !== 'exact')) ? '' : 'none';
   toShow.forEach(v => {
     const el = document.createElement('div');
-    el.className = 'item';
+    el.className = 'item' + (isClosed(v) ? ' closed' : '');
     el.innerHTML = `
       <div class="item-top">
-        <div class="item-name">${escapeHtml(v.name||'')}</div>
+        <div class="item-name">${escapeHtml(v.name||'')}${isClosed(v) ? '<span class="closedtag">closed</span>' : ''}</div>
         ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">\u2713</span>` : ''}
         ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
@@ -850,7 +876,7 @@ document.getElementById('nearChip').addEventListener('click', () => {
 });
 
 document.getElementById('diceChip').addEventListener('click', () => {
-  const pool = venues.filter(matches);
+  const pool = venues.filter(matches).filter(v => !isClosed(v));
   if(!pool.length){ alert('Nothing matches the current filters.'); return; }
   const pick = pool[Math.floor(Math.random() * pool.length)];
   lastPickPool = pool.length;
@@ -884,27 +910,58 @@ function openDetail(v){
        <input id="d_want" placeholder="to order" autocomplete="off">
        <button id="d_wantAdd" type="button">add</button>
      </div></div>`;
-  document.getElementById('detailContent').innerHTML = `
-    <h2>${escapeHtml(v.name||'')}</h2>
-    <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${isChain(v)?' · chain':''}</div>
-    <div class="field"><label>Rating</label>
+  const shut = isClosed(v);
+  const ratingHtml = shut
+    ? `<div class="field"><label>Rating</label><div>${escapeHtml((v.rating||'').trim() || '\u2014')}</div></div>`
+    : `<div class="field"><label>Rating</label>
       <div class="rateRow">
         <div class="rateBtn y ${(v.rating||'').trim()==='y'?'on':''}" data-r="y">y</div>
         <div class="rateBtn d ${(v.rating||'').trim()==='-'?'on':''}" data-r="-">-</div>
         <div class="rateBtn n ${(v.rating||'').trim()==='n'?'on':''}" data-r="n">n</div>
       </div>
-    </div>
-    ${wantHtml}
+    </div>`;
+  // a closed place is a record, not a working entry: it is shown in full and
+  // nothing on the sheet can change it except reopening it
+  const wantShown = shut
+    ? (wants.length ? '<div class="field"><label>To Order</label>' +
+        wants.map(w => `<div class="wantrow"><span>${escapeHtml(w)}</span></div>`).join('') + '</div>' : '')
+    : wantHtml;
+  document.getElementById('detailContent').innerHTML = `
+    <h2 class="${shut ? 'closed' : ''}">${escapeHtml(v.name||'')}</h2>
+    <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${isChain(v)?' · chain':''}</div>
+    ${shut ? `<div class="closedline">${escapeHtml(closedNote(v))} — this entry is kept as a record and cannot be edited</div>` : ''}
+    ${ratingHtml}
+    ${wantShown}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
     <div class="btnrow" style="margin-top:4px;">
       <button class="btn ghost" id="openMenuPageBtn">${itemCount ? `ordered (${itemCount})` : 'ordered'}</button>
-      ${lastPickPool ? `<button class="btn ghost" id="rerollBtn">again (${lastPickPool})</button>` : ''}
+      ${(!shut && lastPickPool) ? `<button class="btn ghost" id="rerollBtn">again (${lastPickPool})</button>` : ''}
     </div>
-    <div class="btnrow">
+    ${shut ? '' : `<div class="btnrow">
       <button class="btn ghost" id="editBtn">Edit</button>
       <button class="btn danger" id="deleteBtn">Delete</button>
-    </div>
+    </div>`}
+    <button class="closedtoggle" id="closedToggle" type="button">${shut ? 'reopen this place' : 'mark as closed'}</button>
   `;
+  const closedToggle = document.getElementById('closedToggle');
+  if(closedToggle) closedToggle.addEventListener('click', async () => {
+    const next = shut ? '' : 'x';
+    if(!confirm(shut ? 'Mark "' + v.name + '" as open again?'
+                     : 'Mark "' + v.name + '" as closed? It stays on the list, in red, and can no longer be edited.')) return;
+    closeDetail();
+    await withBusy(async () => {
+      if(next && !await ensureClosedColumn()) return;
+      const cur = await resolveVenue(v);
+      if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); return; }
+      const rec = Object.assign({}, cur, { closed: next });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`,
+        { values: [objToRow(rec)] });
+      await loadAll(); populateCategories(); render();
+      const fresh = matchVenue(v);
+      if(fresh) openDetail(fresh);
+    });
+  });
   document.querySelectorAll('#detailContent .ate').forEach(btn => {
     btn.addEventListener('click', async () => {
       const i = parseInt(btn.dataset.i,10);
@@ -949,8 +1006,11 @@ function openDetail(v){
       if(again) again.focus();
     });
   }
-  document.getElementById('d_wantAdd').addEventListener('click', addWant);
-  document.getElementById('d_want').addEventListener('keydown', e => { if(e.key === 'Enter') addWant(); });
+  const wantAddBtn = document.getElementById('d_wantAdd');   // absent when closed
+  if(wantAddBtn){
+    wantAddBtn.addEventListener('click', addWant);
+    document.getElementById('d_want').addEventListener('keydown', e => { if(e.key === 'Enter') addWant(); });
+  }
 
   document.querySelectorAll('#detailContent .rateBtn').forEach(el => {
     el.addEventListener('click', async () => {
@@ -998,13 +1058,15 @@ function openDetail(v){
   });
   const reroll = document.getElementById('rerollBtn');
   if(reroll) reroll.addEventListener('click', () => {
-    const pool = venues.filter(matches).filter(x => x.name !== v.name);
+    const pool = venues.filter(matches).filter(x => x.name !== v.name && !isClosed(x));
     if(!pool.length){ alert('No other options match.'); return; }
     openDetail(pool[Math.floor(Math.random() * pool.length)]);
   });
-  document.getElementById('editBtn').addEventListener('click', () => { closeDetail(); openForm(v); });
+  const editBtn = document.getElementById('editBtn');         // absent when closed
+  if(editBtn) editBtn.addEventListener('click', () => { closeDetail(); openForm(v); });
   document.getElementById('openMenuPageBtn').addEventListener('click', () => { closeDetail(); openMenuPage(v); });
-  document.getElementById('deleteBtn').addEventListener('click', async () => {
+  const deleteBtn = document.getElementById('deleteBtn');     // absent when closed
+  if(deleteBtn) deleteBtn.addEventListener('click', async () => {
     if(!confirm(`Delete "${v.name}" from your Excel file?`)) return;
     closeDetail();
     await withBusy(async () => {
@@ -1027,6 +1089,7 @@ overlay.addEventListener('click', () => { closeDetail(); closeForm(); closeMenuF
 let lastPickPool = 0;
 let editingVenue = null;
 function openForm(v){
+  if(v && isClosed(v)){ alert(closedError(v).message); return; }
   editingVenue = v || null;
   document.getElementById('formTitle').textContent = v ? 'Edit Spot' : 'Add Spot';
   document.getElementById('f_name').value = v ? (v.name||'') : '';
@@ -1122,6 +1185,7 @@ function renderMenuPage(){
   body.querySelectorAll('.mp-row').forEach(rowEl => {
     rowEl.addEventListener('click', e => {
       if(e.target.tagName === 'BUTTON') return;
+      if(isClosed(v)) return;                 // closed: the log is read-only
       const idx = parseInt(rowEl.dataset.index, 10);
       const live = menuRows.find(r => r.index === idx && r.vkey === vKey(v));
       if(!live) return;
@@ -1134,6 +1198,7 @@ function renderMenuPage(){
     });
   });
   body.querySelectorAll('.mp-row button').forEach(btn => {
+    if(isClosed(v)){ btn.style.display = 'none'; return; }
     btn.addEventListener('click', async () => {
       const rowEl = btn.closest('.mp-row');
       const idx = parseInt(rowEl.dataset.index, 10);
@@ -1371,6 +1436,8 @@ function openMenuPage(v){
   menuPageVenue = v;
   resetLogInputs();
   refreshSectionList();
+  // a closed place keeps its history but takes no new entries
+  document.getElementById('mp_new').style.display = isClosed(v) ? 'none' : '';
   renderMenuPage();
   overlay.classList.add('open');
   menuPageSheet.classList.add('open');
@@ -1396,6 +1463,7 @@ function resetLogInputs(){
 async function addOrderedItem(){
   const v = menuPageVenue;
   if(!v) return;
+  if(isClosed(v)){ alert(closedError(v).message); return; }
   // any text is accepted - the shortlist is only a typing shortcut
   const vendor = document.getElementById('mp_vendor').value.trim();
   const sec = document.getElementById('mp_section').value.trim() || (vendor ? '' : 'Other');
@@ -1517,6 +1585,7 @@ async function addLogItem(){
   if(!hits.length){ showNewPlace(name); return; }
   if(hits.length > 1){ showMultiPlace(name, hits); return; }
   const v = hits[0];
+  if(isClosed(v)){ alert(closedError(v).message); return; }
   await withBusy(async () => {
     await logItemAt(v, item);
     await loadAll(); populateCategories(); render();
@@ -1532,17 +1601,25 @@ async function addLogItem(){
    A name that exists in more than one location is a brand: Rintaro SF and
    Rintaro Oakland are the same sign over two doors. The flag lives on every
    row of that name so a filter on one branch finds the rest. */
-async function ensureChainColumn(){
-  if(hasChainCol()) return true;
+/* Columns are positional, so Chain has to exist before Closed can be added. */
+async function ensureColumn(name){
   try{
     await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/columns`,
-      { name: CHAIN_COL });
-    mainWidth = COLS.length;
+      { name });
+    mainWidth += 1;
     return true;
   }catch(e){
-    alert('Could not add the "' + CHAIN_COL + '" column to the sheet: ' + e.message);
+    alert('Could not add the "' + name + '" column to the sheet: ' + e.message);
     return false;
   }
+}
+async function ensureChainColumn(){
+  return hasChainCol() ? true : ensureColumn(CHAIN_COL);
+}
+async function ensureClosedColumn(){
+  if(hasClosedCol()) return true;
+  if(!await ensureChainColumn()) return false;
+  return ensureColumn(CLOSED_COL);
 }
 /* Mark every row of these names as a chain. Returns how many rows changed. */
 async function markChains(names){
@@ -1576,6 +1653,37 @@ function multiLocationNames(){
 function unmarkedChainRows(){
   const multi = new Set(multiLocationNames());
   return venues.filter(v => multi.has(normTxt(v.name)) && !isChain(v));
+}
+
+/* Closures confirmed against published round-ups and the venues' own listings,
+   2026-09-06. Marking sets the Closed column; nothing is ever deleted. */
+const KNOWN_CLOSURES = [
+  ['Bellota','San Francisco, CA','closed 2026'],
+  ['The Wurst','Healdsburg, CA','closed 2026'],
+  ['Funky Elephant','Berkeley, CA','closed Jun 2026'],
+  ['Bar Brucato','San Francisco, CA','closed Jun 2026'],
+  ['Decant','San Francisco, CA','closed Jun 2026'],
+  ['Super Mensch','San Francisco, CA','closed Jun 2026'],
+  ['Ama','San Francisco, CA','closed May 2026'],
+  ['Caf\u00e9 Sebastian','San Francisco, CA','closed May 2026'],
+  ['Madlab','San Francisco, CA','closed May 2026'],
+  ['Oken','Oakland, CA','closed May 2026'],
+  ['Gold Palm','Oakland, CA','closed May 2026'],
+  ['International Smoke','San Francisco, CA','closed May 2026'],
+  ['Casa Borinque\u00f1a','San Francisco, CA','closed Jan 2026'],
+  ["Tiger's Taproom",'Oakland, CA','closed Mar 2026'],
+  ['Hamburger Project','San Francisco, CA','closed May 2026'],
+  ['Noodle in a haystack','San Francisco, CA','closed Jun 2026'],
+];
+function knownClosureRows(){
+  const out = [];
+  KNOWN_CLOSURES.forEach(([name, loc, note]) => {
+    venues.forEach(v => {
+      if(normTxt(v.name) === normTxt(name) && normTxt(v.location||'') === normTxt(loc) && !isClosed(v))
+        out.push({ v, note });
+    });
+  });
+  return out;
 }
 
 /* ====== Repairs the data check can run ======
@@ -1629,6 +1737,7 @@ function strayLogRows(){
 
 /* One item, one place: the row, plus the tab-1 flag if this is its first. */
 async function logItemAt(v, item){
+  if(isClosed(v)) throw closedError(v);
   // no Category box any more: reuse the category this item was last filed
   // under at this place, then anywhere, before falling back to Other
   const sec = sectionForItem(item, v);
@@ -1675,7 +1784,8 @@ async function addLogItemMulti(){
   const all = document.getElementById('lg_multiAll').checked;
   const picked = document.querySelector('#lg_multiPicks input:checked');
   if(!all && picked && picked.value === 'new'){ hideMultiPlace(); showNewPlace(name); return; }
-  const targets = all ? hits : [hits[picked ? +picked.value : 0]];
+  const targets = (all ? hits : [hits[picked ? +picked.value : 0]]).filter(v => !isClosed(v));
+  if(!targets.length){ alert('Every place under that name is marked closed.'); return; }
   await withBusy(async () => {
     for(const v of targets) await logItemAt(v, item);
     await loadAll(); populateCategories(); render();
@@ -1757,6 +1867,7 @@ async function addPlaceThenLog(){
   // this exact branch already exists: log against it instead of making a twin
   const twin = venues.find(x => normTxt(x.name) === normTxt(name) && normTxt(x.location||'') === normTxt(location));
   if(twin){
+    if(isClosed(twin)){ alert(closedError(twin).message); return; }
     hideNewPlace();
     await withBusy(async () => {
       // this branch is already on the list: fill in what it is missing, log the
@@ -2059,7 +2170,8 @@ function findDataIssues(){
   const dupeGroups = duplicateGroups();
   const umbrellas = chainUmbrellaRows();
   const strays = strayLogRows();
-  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays };
+  const closures = knownClosureRows();
+  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays, closures };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -2082,7 +2194,9 @@ function renderDiag(){
     line(d.falseFlags.length, 'Flagged but nothing logged', sample(d.falseFlags)) +
     line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
     line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest') +
-    line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained));
+    line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained)) +
+    line(d.closures.length, 'Known to have closed, not marked yet', d.closures.map(c => c.v.name).slice(0,6).join('; ')) +
+    line(venues.filter(isClosed).length, 'Marked closed', 'kept on the list, in red, read-only');
   const btn = document.getElementById('diagFixFlags');
   const n = d.falseFlags.length + d.missingFlags.length;
   btn.textContent = n ? 'Repair ' + n + ' menu flag' + (n===1?'':'s') : 'Menu flags are correct';
@@ -2099,6 +2213,10 @@ function renderDiag(){
   const u = d.umbrellas.length;
   ubtn.textContent = u ? 'Fix ' + u + ' chain row' + (u===1?'':'s') : 'Chain rows are clean';
   ubtn.disabled = !u;
+  const xbtn = document.getElementById('diagMarkClosed');
+  const xc = d.closures.length;
+  xbtn.textContent = xc ? 'Mark ' + xc + ' closure' + (xc===1?'':'s') : 'Closures are marked';
+  xbtn.disabled = !xc;
   const sbtn = document.getElementById('diagAttachStrays');
   const st = d.strays.length;
   sbtn.textContent = st ? 'Attach ' + st + ' logged item' + (st===1?'':'s') : 'Logged items are attached';
@@ -2175,6 +2293,25 @@ document.getElementById('diagAttachStrays').addEventListener('click', async () =
                 ' at the place already on the list?')) return;
     for(const { row, to } of strays)
       await graph('PATCH', menuRow(row.index), { values: [[to.name, to.location||'', row.vendor, row.section, row.item]] });
+    await loadAll(); populateCategories(); render(); renderDiag();
+  });
+});
+
+document.getElementById('diagMarkClosed').addEventListener('click', async () => {
+  await withBusy(async () => {
+    await loadAll();
+    const todo = knownClosureRows();
+    if(!todo.length){ renderDiag(); return; }
+    if(!confirm('Mark ' + todo.length + ' place' + (todo.length===1?'':'s') +
+                ' as closed? They stay on the list, in red, and become read-only.')) return;
+    if(!await ensureClosedColumn()) return;
+    for(const { v, note } of todo){
+      const cur = matchVenue(v);
+      if(!cur) continue;                      // duplicate or vanished - skip, never guess
+      const rec = Object.assign({}, cur, { closed: note });
+      delete rec.index;
+      await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
+    }
     await loadAll(); populateCategories(); render(); renderDiag();
   });
 });

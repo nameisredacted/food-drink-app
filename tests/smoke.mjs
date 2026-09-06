@@ -253,6 +253,119 @@ const check = (name, fn) => {
   });
 }
 
+/* ---------- closed places: red, read-only, never deleted ---------- */
+{
+  const closedRow = ['Bellota','Spanish','San Francisco, CA','','y','','x','888 Brannan St','','','','','closed 2026'];
+  const openRow   = ['Zuni Cafe','American','San Francisco, CA','','y','','','','','','','',''];
+  const a = app({ venues: [closedRow, openRow], menu: [['Bellota','San Francisco, CA','','Mains','jamon']] });
+  await a.settle(400);
+
+  check('closed row is flagged in the model', () => {
+    if(!a.w.eval("isClosed(venues.find(v => v.name === 'Bellota'))")) throw new Error('not read as closed');
+    if(a.w.eval("isClosed(venues.find(v => v.name === 'Zuni Cafe'))")) throw new Error('open row read as closed');
+  });
+  check('list keeps it, in red, with a tag', () => {
+    a.w.eval("state.query = 'a'; render();");
+    const el = [...a.w.document.querySelectorAll('#list .item')].find(e => /Bellota/.test(e.textContent));
+    if(!el) throw new Error('closed place dropped from the list');
+    if(!el.className.includes('closed')) throw new Error('no closed class');
+    if(!el.querySelector('.closedtag')) throw new Error('no closed tag');
+    // jsdom does not resolve custom properties, so check the token it resolves to
+    const colour = a.w.getComputedStyle(el.querySelector('.item-name')).color;
+    if(!/--bad|204, 0, 0|#cc0000/.test(colour)) throw new Error('name not red: ' + colour);
+    const red = /--bad:\s*(#[0-9a-f]{6})/i.exec(a.w.document.documentElement.innerHTML);
+    if(!red || red[1].toLowerCase() !== '#cc0000') throw new Error('the red token moved: ' + (red && red[1]));
+  });
+  check('detail sheet is a record, not a form', () => {
+    a.w.eval("openDetail(venues.find(v => v.name === 'Bellota'))");
+    const c = a.$('detailContent');
+    if(!c.querySelector('h2.closed')) throw new Error('heading not marked closed');
+    if(!/cannot be edited/.test(c.textContent)) throw new Error('no explanation shown');
+    if(c.querySelector('.rateBtn')) throw new Error('rating still settable');
+    if(c.querySelector('.ate') || c.querySelector('#d_want')) throw new Error('to-order still editable');
+    if(a.w.document.getElementById('editBtn')) throw new Error('edit button present');
+    if(a.w.document.getElementById('deleteBtn')) throw new Error('delete button present');
+    if(!a.w.document.getElementById('openMenuPageBtn')) throw new Error('ordered history not reachable');
+    if(!a.w.document.getElementById('closedToggle')) throw new Error('no way to reopen it');
+  });
+  check('an open place still has its controls', () => {
+    a.w.eval("openDetail(venues.find(v => v.name === 'Zuni Cafe'))");
+    const c = a.$('detailContent');
+    if(!c.querySelector('.rateBtn')) throw new Error('rating gone');
+    if(!a.w.document.getElementById('editBtn')) throw new Error('edit gone');
+    if(a.$('closedToggle').textContent !== 'mark as closed') throw new Error(a.$('closedToggle').textContent);
+  });
+  check('the edit form refuses a closed row', () => {
+    a.w.eval("openForm(venues.find(v => v.name === 'Bellota'))");
+    if(a.$('formSheet').className.includes('open')) throw new Error('form opened for a closed place');
+  });
+  check('its ordered page keeps history but takes nothing new', () => {
+    a.w.eval("openMenuPage(venues.find(v => v.name === 'Bellota'))");
+    if(!/jamon/.test(a.$('menuPageBody').innerHTML)) throw new Error('history lost');
+    if(a.$('mp_new').style.display !== 'none') throw new Error('+ add items still offered');
+    if([...a.w.document.querySelectorAll('#menuPageBody .mp-row button')].some(b => b.style.display !== 'none'))
+      throw new Error('remove buttons still live');
+  });
+  a.w.eval('closeMenuPage()');
+  a.click(a.$('logLink'));
+  a.$('lg_venue').value = 'Bellota'; a.$('lg_what').value = 'croquetas';
+  a.state.calls.length = 0;
+  a.enter(a.$('lg_what'));
+  await a.settle(200);
+  check('logging at a closed place writes nothing', () => {
+    if(a.state.calls.some(c => c.method === 'POST')) throw new Error('logged anyway');
+  });
+  check('the dice never picks a closed place', () => {
+    a.click(a.$('closeLog'));
+    a.w.eval("state.query = ''; state.category = ''; state.ratings = new Set(['y']); state.near = null;");
+    for(let i = 0; i < 25; i++){
+      a.click(a.$('diceChip'));
+      if(/Bellota/.test(a.$('detailContent').innerHTML)) throw new Error('dice landed on a closed place');
+    }
+  });
+  a.w.eval('closeDetail(); openDetail(venues.find(v => v.name === "Bellota"))');
+  a.state.calls.length = 0;
+  a.click(a.$('closedToggle'));
+  await a.settle(300);
+  check('reopening clears the Closed cell and nothing else', () => {
+    const p = a.state.calls.filter(c => c.method === 'PATCH' && c.kind === 'venue');
+    if(p.length !== 1) throw new Error('patches: ' + p.length);
+    const row = p[0].body.values[0];
+    if(row[12] !== '') throw new Error('closed cell not cleared: ' + JSON.stringify(row));
+    if(row[0] !== 'Bellota' || row[4] !== 'y') throw new Error('other fields disturbed: ' + JSON.stringify(row));
+  });
+}
+
+/* ---------- marking the known closures from the data check ---------- */
+{
+  const eleven = r => r.slice(0, 11);
+  const a = app({ venues: [
+    eleven(['Bellota','Spanish','San Francisco, CA','','y','','','','','','']),
+    eleven(['The Wurst','German','Healdsburg, CA','','y','','','','','','']),
+    eleven(['Zuni Cafe','American','San Francisco, CA','','y','','','','','','']),
+  ], menu: [] });
+  await a.settle(400);
+  a.w.eval('openDiag()');
+  check('the data check counts the known closures', () => {
+    if(!/Mark 2 closures/.test(a.$('diagMarkClosed').textContent)) throw new Error(a.$('diagMarkClosed').textContent);
+  });
+  a.click(a.$('diagMarkClosed')); await a.settle(500);
+  check('both columns get added and only the closed places are marked', () => {
+    const adds = a.state.calls.filter(c => c.kind === 'addcol').map(c => c.body.name);
+    if(adds.join(',') !== 'Chain,Closed') throw new Error('columns added: ' + adds.join(','));
+    const bell = a.state.venues.find(r => r[0] === 'Bellota');
+    const wurst = a.state.venues.find(r => r[0] === 'The Wurst');
+    const zuni = a.state.venues.find(r => r[0] === 'Zuni Cafe');
+    if(bell[12] !== 'closed 2026') throw new Error('Bellota: ' + JSON.stringify(bell));
+    if(!wurst[12]) throw new Error('The Wurst not marked');
+    if(zuni[12]) throw new Error('an open place was marked closed');
+    if(a.state.venues.length !== 3) throw new Error('a row was removed');
+  });
+  check('nothing is left to mark', () => {
+    if(!a.$('diagMarkClosed').disabled) throw new Error(a.$('diagMarkClosed').textContent);
+  });
+}
+
 console.log(results.join('\n'));
 console.log(failures ? `\n${failures} failing` : `\nall ${results.length} checks passed`);
 process.exit(failures ? 1 : 0);

@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "jsdom": "^30.0.1"
+  },
+  "name": "food-drink-app",
+  "private": true,
+  "version": "0.0.0",
+  "description": "eat + drink - single-file web app over a OneDrive workbook",
+  "scripts": {
+    "test": "node tests/smoke.mjs"
+  }
+}
