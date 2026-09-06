@@ -216,7 +216,12 @@ select.on{color:#111;font-weight:700;}
 #logSheet{min-height:62vh;}
 #lg_new .newmsg{font-size:12px;color:#999;margin-top:12px;}
 #lg_new .addline{margin-top:6px;padding-top:0;border-top:none;}
-#lg_newCancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
+#lg_newCancel,#lg_multiCancel{background:none;border:none;color:#999;font-size:13px;cursor:pointer;}
+#lg_multi .locpicks{margin-top:6px;}
+#lg_multi .locpick{display:flex;align-items:center;gap:9px;font-size:14px;padding:7px 0;border-bottom:1px solid var(--hair);}
+#lg_multi .locpick:last-child{border-bottom:none;}
+#lg_multi .chainrow{display:flex;align-items:center;gap:8px;font-size:13px;color:#666;margin-top:8px;}
+#lg_multi .addline{margin-top:8px;padding-top:0;border-top:none;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
 #logSheet .addline .ac-wrap:last-of-type input{width:100%;}
@@ -321,6 +326,15 @@ select.on{color:#111;font-weight:700;}
       <button id="lg_newCancel" type="button">cancel</button>
     </div>
   </div>
+  <div id="lg_multi" style="display:none;">
+    <div class="newmsg" id="lg_multiMsg"></div>
+    <div class="locpicks" id="lg_multiPicks"></div>
+    <label class="chainrow"><input type="checkbox" id="lg_multiAll"> <span>log it at every one of them</span></label>
+    <div class="addline">
+      <button id="lg_multiAdd" type="button">add</button>
+      <button id="lg_multiCancel" type="button">cancel</button>
+    </div>
+  </div>
   <div id="logBody"></div>
 </div>
 
@@ -366,7 +380,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-6";
+const APP_VERSION = "2026.09.06-7";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1455,34 +1469,80 @@ async function addLogItem(){
   if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
   const hits = venues.filter(x => normTxt(x.name) === normTxt(name));
   if(!hits.length){ showNewPlace(name); return; }
-  if(hits.length > 1){
-    const where = hits.map(x => x.location || 'no location').join(', ');
-    alert('More than one place is called "' + name + '" (' + where + '). Open the right one from the list and log it there.');
-    nameIn.focus(); return;
-  }
+  if(hits.length > 1){ showMultiPlace(name, hits); return; }
   const v = hits[0];
-  // no Category box any more: reuse the category this item was last filed
-  // under at this place, then anywhere, before falling back to Other
-  const sec = sectionForItem(item, v);
   await withBusy(async () => {
-    await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
-      { values: [[v.name, v.location||'', '', sec, item]] });
-    if(v.hasMenuDetail !== 'x'){
-      const cur = await resolveVenue(v);
-      if(cur && cur.hasMenuDetail !== 'x'){
-        const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
-        delete rec.index;
-        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
-      }
-    }
+    await logItemAt(v, item);
     await loadAll(); populateCategories(); render();
     nameIn.value = v.name;           // stay on the same place for the next item
     itemIn.value = '';
-    hideNewPlace();
+    hideNewPlace(); hideMultiPlace();
     renderLog();
     itemIn.focus();
   });
 }
+
+/* One item, one place: the row, plus the tab-1 flag if this is its first. */
+async function logItemAt(v, item){
+  // no Category box any more: reuse the category this item was last filed
+  // under at this place, then anywhere, before falling back to Other
+  const sec = sectionForItem(item, v);
+  await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
+    { values: [[v.name, v.location||'', '', sec, item]] });
+  if(v.hasMenuDetail !== 'x'){
+    const cur = await resolveVenue(v);
+    if(cur && cur.hasMenuDetail !== 'x'){
+      const rec = Object.assign({}, cur, { hasMenuDetail: 'x' });
+      delete rec.index;
+      await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
+    }
+  }
+}
+
+/* ====== One name, several locations ======
+   Chains and repeats (28 names repeat, 11 of them within one location) used to
+   be a dead end here too. Pick the one you were at, or tick the box and the
+   item lands at every one of them — the same dish at every branch. */
+let pendingMulti = null;
+function showMultiPlace(name, hits){
+  hideNewPlace();
+  pendingMulti = { name, hits };
+  document.getElementById('lg_multiMsg').textContent =
+    hits.length + ' places called "' + name + '" — which one?';
+  document.getElementById('lg_multiPicks').innerHTML = hits.map((v,i) =>
+    `<label class="locpick"><input type="radio" name="lg_which" value="${i}"${i===0?' checked':''}>` +
+    `<span>${escapeHtml(v.location || 'no location')}${v.category ? ' · ' + escapeHtml(v.category) : ''}</span></label>`).join('');
+  document.getElementById('lg_multiAll').checked = false;
+  document.getElementById('lg_multi').style.display = '';
+}
+function hideMultiPlace(){
+  pendingMulti = null;
+  document.getElementById('lg_multi').style.display = 'none';
+}
+async function addLogItemMulti(){
+  if(!pendingMulti) return;
+  const itemIn = document.getElementById('lg_what');
+  const item = itemIn.value.trim();
+  if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
+  const { name, hits } = pendingMulti;
+  const all = document.getElementById('lg_multiAll').checked;
+  const picked = document.querySelector('#lg_multiPicks input:checked');
+  const targets = all ? hits : [hits[picked ? +picked.value : 0]];
+  await withBusy(async () => {
+    for(const v of targets) await logItemAt(v, item);
+    await loadAll(); populateCategories(); render();
+    hideMultiPlace();
+    document.getElementById('lg_venue').value = name;   // stay on it for the next item
+    itemIn.value = '';
+    renderLog();
+    itemIn.focus();
+  });
+}
+document.getElementById('lg_multiAdd').addEventListener('click', addLogItemMulti);
+document.getElementById('lg_multiCancel').addEventListener('click', () => {
+  hideMultiPlace();
+  document.getElementById('lg_venue').focus();
+});
 
 /* ====== New place, straight from the ordered screen ======
    Typing a place that isn't on the list yet used to be a dead end ("add it
@@ -1491,6 +1551,7 @@ async function addLogItem(){
    place and the item together. */
 let pendingNewPlace = null;
 function showNewPlace(name){
+  hideMultiPlace();
   const again = pendingNewPlace && normTxt(pendingNewPlace) === normTxt(name);
   pendingNewPlace = name;
   document.getElementById('lg_newMsg').textContent = 'nothing called "' + name + '" yet — add it?';
@@ -1552,7 +1613,7 @@ document.getElementById('lg_what').addEventListener('keydown', e => {
 });
 
 function openLog(prefillVenue){
-  hideNewPlace();
+  hideNewPlace(); hideMultiPlace();
   document.getElementById('logSearch').value='';
   document.getElementById('lg_venue').value = prefillVenue || '';
   document.getElementById('lg_what').value = '';
@@ -1562,7 +1623,7 @@ function openLog(prefillVenue){
   overlay.classList.add('open');
   logSheet.classList.add('open');
 }
-function closeLog(){ hideNewPlace(); overlay.classList.remove('open'); logSheet.classList.remove('open'); }
+function closeLog(){ hideNewPlace(); hideMultiPlace(); overlay.classList.remove('open'); logSheet.classList.remove('open'); }
 document.getElementById('logLink').addEventListener('click', () => openLog());
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
