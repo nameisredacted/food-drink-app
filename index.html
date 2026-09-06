@@ -366,7 +366,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-5";
+const APP_VERSION = "2026.09.06-6";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1491,11 +1491,12 @@ async function addLogItem(){
    place and the item together. */
 let pendingNewPlace = null;
 function showNewPlace(name){
+  const again = pendingNewPlace && normTxt(pendingNewPlace) === normTxt(name);
   pendingNewPlace = name;
   document.getElementById('lg_newMsg').textContent = 'nothing called "' + name + '" yet — add it?';
   const loc = document.getElementById('lg_location');
   const cat = document.getElementById('lg_category');
-  loc.value = ''; cat.value = '';
+  if(!again){ loc.value = ''; cat.value = ''; }   // keep what was typed for this same place
   attachAutocomplete(loc, locationOptions, { typedOnly: true, next: 'lg_category' });
   attachAutocomplete(cat, categoryOptions, { typedOnly: true });
   document.getElementById('lg_new').style.display = '';
@@ -1508,10 +1509,11 @@ function hideNewPlace(){
 async function addPlaceThenLog(){
   const nameIn = document.getElementById('lg_venue');
   const itemIn = document.getElementById('lg_what');
-  const name = (pendingNewPlace || nameIn.value).trim();
+  const name = (nameIn.value || pendingNewPlace || '').trim();
   const item = itemIn.value.trim();
   if(!name){ hideNewPlace(); nameIn.focus(); return; }
   if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
+  if(venues.some(x => normTxt(x.name) === normTxt(name))){ hideNewPlace(); await addLogItem(); return; }
   const location = document.getElementById('lg_location').value.trim();
   const category = document.getElementById('lg_category').value.trim();
   if(venues.some(x => normTxt(x.name) === normTxt(name) && normTxt(x.location||'') === normTxt(location))){
