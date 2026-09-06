@@ -213,6 +213,7 @@ select.on{color:#111;font-weight:700;}
                color:var(--text);font-size:14px;border-radius:0;}
 .wantadd button{flex:none;padding:8px 13px;border:1px solid #ddd;background:#fff;
                 color:var(--accent);font-size:14px;cursor:pointer;border-radius:0;}
+#logSheet{min-height:62vh;}
 #logSheet .addline{margin-top:10px;padding-top:10px;}
 #logSheet .addline .ac-wrap:last-of-type{flex:1 1 auto;min-width:0;}
 #logSheet .addline .ac-wrap:last-of-type input{width:100%;}
@@ -242,7 +243,7 @@ select.on{color:#111;font-weight:700;}
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
     <div class="searchrow">
-      <input class="search" id="searchBox" placeholder="Search..." autocomplete="off">
+      <input class="search" id="searchBox" placeholder="search..." autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
       <button class="clearx" id="clearAllBtn" type="button" title="clear all">&times;</button>
     </div>
     <div class="suggest" id="suggestBox"></div>
@@ -302,11 +303,10 @@ select.on{color:#111;font-weight:700;}
 <div class="sheet" id="logSheet">
   <button class="close-x" id="closeLog">&times;</button>
   <h2>ordered</h2>
-  <div class="sub" id="logSub"></div>
-  <div class="searchrow"><input class="search" id="logSearch" placeholder="Search..." autocomplete="off"></div>
+  <div class="searchrow"><input class="search" id="logSearch" placeholder="search..." autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
   <div class="addline">
-    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="Where" autocomplete="off" autocorrect="off" spellcheck="false"></div>
-    <div class="ac-wrap"><input id="lg_what" placeholder="What" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="where" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+    <div class="ac-wrap"><input id="lg_what" placeholder="what" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <button id="lg_add" type="button">add</button>
   </div>
   <div id="logBody"></div>
@@ -354,7 +354,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-2";
+const APP_VERSION = "2026.09.06-3";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1386,21 +1386,19 @@ document.getElementById('mp_bulk').addEventListener('click', () => {
 
 /* ====== Global log: everything ever ordered, searchable ====== */
 const logSheet = document.getElementById('logSheet');
-/* Opens on the whole list, the way it did before: an empty sheet at the bottom
-   of the screen reads as broken. The category is printed once per run of items
-   rather than on every line, and the first 500 rows are enough to scroll. */
+/* Nothing is listed until something is typed — 988 rows on open was noise. The
+   sheet holds its height either way (see #logBody), so an empty list does not
+   collapse it into a strip at the bottom of the screen. The category is printed
+   once per run of items rather than on every line. */
 function renderLog(){
   const body = document.getElementById('logBody');
   const q = document.getElementById('logSearch').value.trim().toLowerCase();
-  let rows = menuRows.filter(r => r.item && r.item !== '(no items recorded)');
-  if(q) rows = rows.filter(r => (r.venue+' '+r.vendor+' '+r.section+' '+r.item).toLowerCase().includes(q));
+  if(!q){ body.innerHTML = ''; return; }
+  let rows = menuRows.filter(r => r.item && r.item !== '(no items recorded)')
+    .filter(r => (r.venue+' '+r.vendor+' '+r.section+' '+r.item).toLowerCase().includes(q));
   rows = rows.slice().sort((a,b) =>
     a.venue.localeCompare(b.venue) || a.vendor.localeCompare(b.vendor) ||
     a.section.localeCompare(b.section) || a.item.localeCompare(b.item));
-  const nVenues = new Set(rows.map(r => r.venue)).size;
-  document.getElementById('logSub').textContent = rows.length
-    ? rows.length + ' item' + (rows.length===1?'':'s') + ' · ' + nVenues + ' place' + (nVenues===1?'':'s')
-    : '';
   if(!rows.length){ body.innerHTML = '<div class="hint-empty">Nothing ordered matches that.</div>'; return; }
 
   let html = '', lastVenue = null, lastCat = null, open = false, shown = 0, cut = false;
