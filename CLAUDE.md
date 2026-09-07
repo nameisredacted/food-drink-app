@@ -49,6 +49,14 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
 - Editing from a Cowork session: with the folder connected, edit `index.html` in place
   through `device_bash` (no staging round-trip, so none of the cached-bytes trouble below),
   then push from GitHub Desktop.
+- **Pushing from a Cowork session now works end to end** (2026-09-07): ask for delete
+  permission on the repo folder (`device_request_delete_permission`) so git can clear its own
+  locks, `git commit` in the mounted repo, then drive **GitHub Desktop** with computer use —
+  `computer_resolve_access` / `computer_request_access` for `com.github.GitHubClient`, then
+  Fetch origin and press the toolbar **Push origin** button. The in-page Push button does not
+  always take a background press; the toolbar one does. The cloud sandbox's git proxy still
+  refuses credentials for this repo (`not in this session's authorized repository set`), so
+  the sandbox cannot push directly.
 - **Git from `device_bash` leaves stale locks.** The shell cannot unlink, so every git
   command leaves `.git/index.lock`, `.git/HEAD.lock` and `tmp_obj_*` files behind, and a
   stale `index.lock` blocks GitHub Desktop. Ask for delete permission on the repo folder
