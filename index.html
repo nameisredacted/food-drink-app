@@ -144,7 +144,7 @@ main{padding:2px 16px 90px;}
 .item{background:none;border:none;border-bottom:1px solid var(--hair);padding:11px 0;margin:0;}
 .item-name{color:var(--accent);font-weight:400;font-size:15px;}
 /* closed places keep their place in the list, in red, and cannot be edited */
-.item.closed .item-name,#detailContent h2.closed{color:var(--bad);}
+.item.closed .item-name,#detailContent h2.closed,#menuPageTitle.closed,.log-head.closed{color:var(--bad);}
 .item.closed .item-sub,.item.closed .toorder{color:#a05a5a;}
 .closedtag{color:var(--bad);font-size:11px;text-transform:uppercase;letter-spacing:.06em;
            border:1px solid var(--bad);border-radius:3px;padding:0 4px;margin-left:7px;white-space:nowrap;}
@@ -328,7 +328,6 @@ select.on{color:#111;font-weight:700;}
     <button class="btn ghost" id="diagMergeDupes">Merge duplicates</button>
     <button class="btn ghost" id="diagFixUmbrellas">Fix chain rows</button>
     <button class="btn ghost" id="diagAttachStrays">Attach logged items</button>
-    <button class="btn ghost" id="diagMarkClosed">Mark closures</button>
   </div>
 </div>
 
@@ -405,7 +404,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.07-1";
+const APP_VERSION = "2026.09.07-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -503,6 +502,9 @@ function isChain(v){ return String((v && v.chain) || '').trim().toLowerCase() ==
    read-only and marked in red. Any non-empty value counts, so "closed 2026" or a
    date works as well as an x. */
 function isClosed(v){ return !!String((v && v.closed) || '').trim(); }
+/* the closed label follows a place everywhere its name is shown - list, detail sheet,
+   its ordered page and the global log - so a record is never mistaken for a live entry */
+function closedTag(v){ return isClosed(v) ? '<span class="closedtag">closed</span>' : ''; }
 function closedNote(v){
   const t = String((v && v.closed) || '').trim();
   return (!t || t.toLowerCase() === 'x') ? 'closed' : 'closed · ' + t;
@@ -767,7 +769,7 @@ function render(){
     el.className = 'item' + (isClosed(v) ? ' closed' : '');
     el.innerHTML = `
       <div class="item-top">
-        <div class="item-name">${escapeHtml(v.name||'')}${isClosed(v) ? '<span class="closedtag">closed</span>' : ''}</div>
+        <div class="item-name">${escapeHtml(v.name||'')}${closedTag(v)}</div>
         ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">\u2713</span>` : ''}
         ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
@@ -876,7 +878,7 @@ function openDetail(v){
         wants.map(w => `<div class="wantrow"><span>${escapeHtml(w)}</span></div>`).join('') + '</div>' : '')
     : wantHtml;
   document.getElementById('detailContent').innerHTML = `
-    <h2 class="${shut ? 'closed' : ''}">${escapeHtml(v.name||'')}</h2>
+    <h2 class="${shut ? 'closed' : ''}">${escapeHtml(v.name||'')}${closedTag(v)}</h2>
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${isChain(v)?' · chain':''}</div>
     ${shut ? `<div class="closedline">${escapeHtml(closedNote(v))} — this entry is kept as a record and cannot be edited</div>` : ''}
     ${ratingHtml}
@@ -1135,7 +1137,9 @@ function renderMenuPage(){
     .map(r => ({ index: r.index, vendor: r.vendor || '', cat: r.section || (r.vendor ? '' : 'Other'), item: r.item }))
     .sort((a,b) => a.vendor.localeCompare(b.vendor) || a.cat.localeCompare(b.cat) || a.item.localeCompare(b.item));
   const cats = new Set(rows.map(r => r.vendor + '|' + r.cat));
-  document.getElementById('menuPageTitle').textContent = v.name;
+  const mpTitle = document.getElementById('menuPageTitle');
+  mpTitle.innerHTML = escapeHtml(v.name||'') + closedTag(v);
+  mpTitle.classList.toggle('closed', isClosed(v));
   document.getElementById('menuPageSub').textContent = rows.length
     ? rows.length + ' item' + (rows.length===1?'':'s')
     : 'Nothing recorded yet';
@@ -1522,7 +1526,9 @@ function renderLog(){
     const cat = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
     if(r.venue !== lastVenue){
       closeGrp();
-      html += `<div class="log-head" data-venue="${escapeHtml(r.venue)}" data-row="${r.index}">${escapeHtml(r.venue)}</div>`;
+      const lv = (r.vkey && venues.find(x => vKey(x) === r.vkey))
+                 || venues.find(x => normTxt(x.name) === normTxt(r.venue));
+      html += `<div class="log-head${lv && isClosed(lv) ? ' closed' : ''}" data-venue="${escapeHtml(r.venue)}" data-row="${r.index}">${escapeHtml(r.venue)}${lv ? closedTag(lv) : ''}</div>`;
       lastVenue = r.venue; lastCat = null;
     }
     if(cat !== lastCat){
@@ -1633,34 +1639,6 @@ function unmarkedChainRows(){
 
 /* Closures confirmed against published round-ups and the venues' own listings,
    2026-09-06. Marking sets the Closed column; nothing is ever deleted. */
-const KNOWN_CLOSURES = [
-  ['Bellota','San Francisco, CA','closed 2026'],
-  ['The Wurst','Healdsburg, CA','closed 2026'],
-  ['Funky Elephant','Berkeley, CA','closed Jun 2026'],
-  ['Bar Brucato','San Francisco, CA','closed Jun 2026'],
-  ['Decant','San Francisco, CA','closed Jun 2026'],
-  ['Super Mensch','San Francisco, CA','closed Jun 2026'],
-  ['Ama','San Francisco, CA','closed May 2026'],
-  ['Caf\u00e9 Sebastian','San Francisco, CA','closed May 2026'],
-  ['Madlab','San Francisco, CA','closed May 2026'],
-  ['Oken','Oakland, CA','closed May 2026'],
-  ['Gold Palm','Oakland, CA','closed May 2026'],
-  ['International Smoke','San Francisco, CA','closed May 2026'],
-  ['Casa Borinque\u00f1a','San Francisco, CA','closed Jan 2026'],
-  ["Tiger's Taproom",'Oakland, CA','closed Mar 2026'],
-  ['Hamburger Project','San Francisco, CA','closed May 2026'],
-  ['Noodle in a haystack','San Francisco, CA','closed Jun 2026'],
-];
-function knownClosureRows(){
-  const out = [];
-  KNOWN_CLOSURES.forEach(([name, loc, note]) => {
-    venues.forEach(v => {
-      if(normTxt(v.name) === normTxt(name) && normTxt(v.location||'') === normTxt(loc) && !isClosed(v))
-        out.push({ v, note });
-    });
-  });
-  return out;
-}
 
 /* ====== Repairs the data check can run ======
    Three problems the sheet has picked up over time: the same place entered
@@ -2146,8 +2124,7 @@ function findDataIssues(){
   const dupeGroups = duplicateGroups();
   const umbrellas = chainUmbrellaRows();
   const strays = strayLogRows();
-  const closures = knownClosureRows();
-  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays, closures };
+  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -2171,7 +2148,6 @@ function renderDiag(){
     line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
     line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest') +
     line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained)) +
-    line(d.closures.length, 'Known to have closed, not marked yet', d.closures.map(c => c.v.name).slice(0,6).join('; ')) +
     line(venues.filter(isClosed).length, 'Marked closed', 'kept on the list, in red, read-only');
   const btn = document.getElementById('diagFixFlags');
   const n = d.falseFlags.length + d.missingFlags.length;
@@ -2189,10 +2165,6 @@ function renderDiag(){
   const u = d.umbrellas.length;
   ubtn.textContent = u ? 'Fix ' + u + ' chain row' + (u===1?'':'s') : 'Chain rows are clean';
   ubtn.disabled = !u;
-  const xbtn = document.getElementById('diagMarkClosed');
-  const xc = d.closures.length;
-  xbtn.textContent = xc ? 'Mark ' + xc + ' closure' + (xc===1?'':'s') : 'Closures are marked';
-  xbtn.disabled = !xc;
   const sbtn = document.getElementById('diagAttachStrays');
   const st = d.strays.length;
   sbtn.textContent = st ? 'Attach ' + st + ' logged item' + (st===1?'':'s') : 'Logged items are attached';
@@ -2273,24 +2245,6 @@ document.getElementById('diagAttachStrays').addEventListener('click', async () =
   });
 });
 
-document.getElementById('diagMarkClosed').addEventListener('click', async () => {
-  await withBusy(async () => {
-    await loadAll();
-    const todo = knownClosureRows();
-    if(!todo.length){ renderDiag(); return; }
-    if(!confirm('Mark ' + todo.length + ' place' + (todo.length===1?'':'s') +
-                ' as closed? They stay on the list, in red, and become read-only.')) return;
-    if(!await ensureClosedColumn()) return;
-    for(const { v, note } of todo){
-      const cur = matchVenue(v);
-      if(!cur) continue;                      // duplicate or vanished - skip, never guess
-      const rec = Object.assign({}, cur, { closed: note });
-      delete rec.index;
-      await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
-    }
-    await loadAll(); populateCategories(); render(); renderDiag();
-  });
-});
 
 document.getElementById('diagMarkChains').addEventListener('click', async () => {
   await withBusy(async () => {

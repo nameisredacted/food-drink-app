@@ -21,6 +21,9 @@ Single-file web app for a personal food/drink list. `index.html` is the whole ap
 
 `Name | Category | Location | To Order | Rating | Notes | Has Menu Detail | Address | Lat | Lng | Geo Precision | Chain`
 
+The workbook now carries all 13 columns — `Chain` (12th) and `Closed` (13th) were written
+into it directly on 2026-09-07, so neither is added lazily any more.
+
 - `Chain` is the 12th column and may be **absent** in an older copy of the workbook.
   `mainWidth` is read from the first row on load; `objToRow()` pads/truncates to it, so
   an 11-column sheet keeps working. `ensureChainColumn()` adds the column via Graph
@@ -67,6 +70,8 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
   margins zeroed — `.bulklink` brings a `margin-top` that otherwise drops it off the line.
 - Venue ordered page: add fields stay behind `+ add items`.
 - Sheets are dismissed with the `×`; panels have no cancel buttons.
+- The **closed label is not a list decoration** — it renders wherever a place's name is
+  shown (list, detail heading, ordered-page title, global-log heading) through `closedTag(v)`.
 - The **primary search bar has no dropdown** (removed 2026.09.07-1). The list below it
   already filters live and shows the whole result set; the box only ever showed a top-8
   slice of the same thing. Enter dismisses the keyboard, Escape clears the box. The
@@ -116,8 +121,9 @@ venue, so each is either one chain row or per-branch rows and needs a call:
 Andytown Coffee Roasters (Local Chain + SF), Boudin Bakery (Millbrae + SF + Multiple
 Locations), Matcha Cafe Maiko (SF + Multiple Locations), Philz Coffee (Local Chain + SF).
 
-The live workbook is still **11 columns** — no `Chain`, no `Closed`. Both are added
-lazily on first use, so the closure work below has not touched the data yet.
+The live workbook is now **13 columns**: `Chain` and `Closed` were written into it on
+2026-09-07 rather than waiting for the app to add them lazily. `Chain` is still empty —
+nothing has been marked as a chain yet.
 
 ## Closed places (2026.09.06-21)
 
@@ -132,8 +138,15 @@ better than an x, and shows on the detail sheet). Closed rows are **never delete
   location picker, the + panel), and the dice never picks one.
 
 `mark as closed` / `reopen this place` on the detail sheet is the only mutation a closed
-row accepts. `KNOWN_CLOSURES` holds the sixteen verified in the sweep below; the data
-check's **Mark closures** button applies them.
+row accepts, and it is now the **only** way a row gets marked: the bulk **Mark closures**
+button, `KNOWN_CLOSURES` and `knownClosureRows()` were removed in 2026.09.07-2. The sixteen
+verified closures were written straight into the workbook instead, so the list they held is
+in the data, not in the code.
+
+The closed label follows the place **everywhere its name is shown** (2026.09.07-2) — the
+list, the detail heading, the title of its ordered page, and the venue heading in the global
+log — via one `closedTag(v)` helper. A record should never read as a live entry, whichever
+screen it turns up on.
 
 ## Data check (repairs, each one-tap with a confirm)
 
@@ -152,8 +165,9 @@ check's **Mark closures** button applies them.
 ## Closure sweep (started 2026-09-06)
 
 Method: cross-match published closure round-ups against the workbook names first (cheap,
-broad), then verify individual venues. Confirmed closed so far — marked with the Closed
-column, never deleted:
+broad), then verify individual venues. All sixteen below are now **written into the
+workbook's `Closed` column** (2026-09-07), so they carry their label in the app; the bulk
+button that used to apply them is gone. Closed rows are never deleted:
 
 | Row | Location | Rating | Evidence |
 |---|---|---|---|
@@ -187,27 +201,84 @@ the row is a Local Chain — do not retire it. No Sonoma County closure from the
 
 Still to sweep: the remaining rated-y rows, then Healdsburg, then the rest of SF.
 
-## Missing locations, verified 2026-09-06
+## Missing locations — verified 2026-09-06, written in 2026-09-07
 
-Nine of the 48 no-location rows have logged items; all nine are open and their locations are:
-Hang Ah Dim Sum → San Francisco, CA (1 Pagoda Pl); Bollywood Kitchen → Healdsburg, CA;
-Anna's Seafood → Petaluma, CA; Arandas → Healdsburg, CA; El Coyote → Sonoma, CA;
-Tokyo Central → Emeryville, CA; Centurión Lounge SEA → Seattle, WA.
-Raimondo Park and Mezclá could not be identified — ask before filling them in.
+All applied directly to the workbook (not through the app), with the matching log rows
+relocated so venue identity resolves:
 
-## Open items (as of the 2026-09-04 workbook snapshot)
+| Row | Location written |
+|---|---|
+| Hang Ah Dim Sum | **Santa Rosa, CA** |
+| Bollywood Kitchen | Healdsburg, CA |
+| Arandas | Healdsburg, CA |
+| Anna's Seafood | Petaluma, CA |
+| El Coyote | Sonoma, CA |
+| Tokyo Central | Emeryville, CA |
+| Centurión Lounge SEA | Seattle, WA |
+| Raimondo Park | Oakland, CA (1800 Wood St) |
 
-- ~13 log names are spelling drift and are **not** auto-attached: Black Oak Coffee
-  Roastery→Roasters (21 rows), Healdsburg Bagel Co. + Drewish→& Drewish Deli (12),
-  Underdog→Underdogs Tres, Dry Creek General Store bar, Guiso's→Guiso, Taco el charro,
-  Daeho kalbijjin, Thourough Bread, troubador, Brecks, Equator Coffee(s),
-  Dumpling House Mongolian Cuisin(e), Everett & Jones BBQ.
-- ~120 logged rows name places that are not on the list at all: Laureate (26),
-  flying goat (18), `as quoted` (13, looks like a placeholder), plank coffee + roastery,
-  Roof 106, SFCFC, Lo + Behold, Espressiosos, Levi's, SFO.
-- 54 rows flagged `Has Menu Detail` with nothing logged anywhere.
-- 48 rows with no location — fine by design; that group should only ever hold
-  single-location places or chains.
+**Hang Ah** is two different places and the list holds both: `Hang Ah Tea Room` is the SF
+Chinatown one at 1 Pagoda Pl, and `Hang Ah Dim Sum` is **Santa Rosa** — corrected on
+2026-09-07 after it was first filed under the Tea Room's SF address. Its 25 logged rows
+moved with it. Do not merge the two.
+
+**Raimondo Park** was the other open question: the log's vendors are "Ballers Grill" and
+"Cocktail Cart", which identify it as **Raimondi Park**, 1800 Wood St, West Oakland — the
+Oakland Ballers' ballpark. The row keeps the workbook's spelling; only the location moved.
+
+**Mezclá** is still blank on purpose — the row's own note says *Food truck*, and its one
+logged item (Wisconsin Cheese Curds) turns up again as a **vendor at an SFCFC match**.
+A truck has no fixed location, so it stays in the no-location group.
+
+53 log rows carried stale location text for these eight (`North Bay, CA`,
+`Prior repository`, `International Chain`) and now carry the venue's real location.
+
+## Location spelling normalised (2026-09-07)
+
+21 rows were filed under `san francisco` / `sf, ca` rather than `San Francisco, CA`,
+which splits venue identity because identity is name + location. 20 were rewritten to the
+canonical form. The 21st, **Lucania** (`sf, ca`), was the same venue as an existing
+`San Francisco, CA` row, so it merged into it under the standard rule (lowest row kept,
+first non-empty wins) and the twin was deleted — the table is now 2214 rows.
+
+Worth a guard in the app: the location field should canonicalise on save, or the data check
+should list rows whose location differs from a known location only by case or abbreviation.
+
+## Open items (workbook state after the 2026-09-07 pass)
+
+**Every logged row now resolves to a venue.** Unmatched log rows went 208 -> 38 -> **0**, and
+`Has Menu Detail` rows with nothing logged went 54 -> 29 -> **0** (the orphan flags were
+cleared outright — if a flag cannot be tied to an ordered item it is noise). 2219 venues,
+990 logged items, 41 rows with no location.
+
+Two things had been happening in the log: real spelling drift, and names simply shorter than
+the venue row ("Laureate" for The Laureate, "Roof 106" for Roof 106 at The Matheson, "Levi's"
+for Levi's Stadium). About 190 log rows were repointed at their venue and given its location.
+
+Five venues were **added** for names that had been logged against nothing:
+
+| Added | Location | What it is |
+|---|---|---|
+| As Quoted | San Francisco, CA (3613 Sacramento St) | restaurant on Sacramento St |
+| SFCFC | San Francisco, CA | San Francisco City FC — match catering; the log's vendors (Adelita's Antojitos, Chairman Bao, Chidos Pizza, El Fuego, Mezclá, Saltwater bakeshop, Tacos King Maya) rotate by venue |
+| SFO | San Francisco, CA | the airport — many vendors under it, "The Club" so far |
+| El Yucatero | San Francisco, CA | |
+| Maison | *unconfirmed* | logged under `North Bay, CA`; its items (Burrata, Troubadour Grilled Cheese) point at Healdsburg but nothing confirms it — **ask before filling it in** |
+
+SFCFC and SFO behave like Levi's Stadium and Raimondo Park: one venue row, many vendors
+underneath it in the log. The vendor column is what carries the detail.
+
+**Jane** and **Réveille** are separate chains, not duplicates — their several rows are real
+branches. The log rows that named only the chain were attached to the chain-level rows
+(`Jane the Bakery`, `Réveille Coffee Co.`, both `Local Chain`), which is where they were
+already filed.
+
+Remaining:
+
+- **41 rows with no location** — fine by design; single-location places, chains, and the
+  one food truck.
+- The **Repair menu flags** and **Attach logged items** buttons should now report nothing.
+  If either starts finding rows again, something upstream is writing names that do not match.
 
 ## Working on this across sessions
 

@@ -336,33 +336,53 @@ const check = (name, fn) => {
   });
 }
 
-/* ---------- marking the known closures from the data check ---------- */
+/* ---------- the closed label follows the place everywhere ---------- */
 {
-  const eleven = r => r.slice(0, 11);
   const a = app({ venues: [
-    eleven(['Bellota','Spanish','San Francisco, CA','','y','','','','','','']),
-    eleven(['The Wurst','German','Healdsburg, CA','','y','','','','','','']),
-    eleven(['Zuni Cafe','American','San Francisco, CA','','y','','','','','','']),
-  ], menu: [] });
+    ['Bellota','Spanish','San Francisco, CA','','y','','x','','','','','','closed 2026'],
+    ['Zuni Cafe','American','San Francisco, CA','','y','','x','','','','','',''],
+  ], menu: [
+    ['Bellota','San Francisco, CA','','Mains','jamon'],
+    ['Zuni Cafe','San Francisco, CA','','Mains','roast chicken'],
+  ] });
   await a.settle(400);
-  a.w.eval('openDiag()');
-  check('the data check counts the known closures', () => {
-    if(!/Mark 2 closures/.test(a.$('diagMarkClosed').textContent)) throw new Error(a.$('diagMarkClosed').textContent);
+  const tag = el => el && el.querySelector('.closedtag');
+
+  check('the list shows the label', () => {
+    a.w.eval("state.query = 'bellota'; render();");
+    const el = [...a.w.document.querySelectorAll('#list .item')].find(x => /Bellota/.test(x.textContent));
+    if(!tag(el)) throw new Error('no label in the list');
   });
-  a.click(a.$('diagMarkClosed')); await a.settle(500);
-  check('both columns get added and only the closed places are marked', () => {
-    const adds = a.state.calls.filter(c => c.kind === 'addcol').map(c => c.body.name);
-    if(adds.join(',') !== 'Chain,Closed') throw new Error('columns added: ' + adds.join(','));
-    const bell = a.state.venues.find(r => r[0] === 'Bellota');
-    const wurst = a.state.venues.find(r => r[0] === 'The Wurst');
-    const zuni = a.state.venues.find(r => r[0] === 'Zuni Cafe');
-    if(bell[12] !== 'closed 2026') throw new Error('Bellota: ' + JSON.stringify(bell));
-    if(!wurst[12]) throw new Error('The Wurst not marked');
-    if(zuni[12]) throw new Error('an open place was marked closed');
-    if(a.state.venues.length !== 3) throw new Error('a row was removed');
+  check('the detail sheet shows the label', () => {
+    a.w.eval("openDetail(venues.find(v => v.name === 'Bellota'))");
+    if(!tag(a.$('detailContent').querySelector('h2'))) throw new Error('no label on the detail heading');
   });
-  check('nothing is left to mark', () => {
-    if(!a.$('diagMarkClosed').disabled) throw new Error(a.$('diagMarkClosed').textContent);
+  check('the ordered page shows the label', () => {
+    a.w.eval("openMenuPage(venues.find(v => v.name === 'Bellota'))");
+    const t = a.$('menuPageTitle');
+    if(!tag(t)) throw new Error('no label on the ordered page');
+    if(!t.className.includes('closed')) throw new Error('ordered page title not marked closed');
+  });
+  check('the global log shows the label', () => {
+    a.w.eval('closeMenuPage()');
+    a.$('logSearch').value = 'jamon';
+    a.fire(a.$('logSearch'), 'input');
+    const head = a.$('logBody').querySelector('.log-head');
+    if(!head) throw new Error('log did not render');
+    if(!tag(head)) throw new Error('no label in the global log');
+  });
+  check('an open place carries no label anywhere', () => {
+    a.w.eval("openDetail(venues.find(v => v.name === 'Zuni Cafe'))");
+    if(tag(a.$('detailContent'))) throw new Error('open place labelled closed');
+    a.w.eval("openMenuPage(venues.find(v => v.name === 'Zuni Cafe'))");
+    if(tag(a.$('menuPageTitle').parentNode) && a.$('menuPageTitle').querySelector('.closedtag'))
+      throw new Error('open place labelled on its ordered page');
+  });
+  check('the data check no longer offers a bulk closure button', () => {
+    a.w.eval('closeMenuPage(); openDiag()');
+    if(a.$('diagMarkClosed')) throw new Error('the Mark closures button is still there');
+    if(/Known to have closed/.test(a.$('diagBody').innerHTML)) throw new Error('closure line still in the data check');
+    if(!/Marked closed/.test(a.$('diagBody').innerHTML)) throw new Error('the closed count should still be reported');
   });
 }
 
