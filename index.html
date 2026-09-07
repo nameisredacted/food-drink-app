@@ -93,12 +93,6 @@
   .mp-head span:first-child{flex:0 0 36%;}
   .mp-head span:nth-child(2){flex:1;}
   .sugwrap{position:relative;}
-  .suggest{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none;}
-  .suggest.open{display:block;}
-  .sug{padding:9px 12px;font-size:14px;cursor:pointer;border-bottom:1px solid var(--border);}
-  .sug:last-child{border-bottom:none;}
-  .sug.sel{background:var(--card2);}
-  .sug small{display:block;color:var(--muted);font-size:11px;margin-top:1px;}
   .mp-sec{margin-top:14px;}
   .mp-sec h4{margin:0 0 4px;font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;}
   .mp-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;}
@@ -280,7 +274,6 @@ select.on{color:#111;font-weight:700;}
       <input class="search" id="searchBox" placeholder="search..." autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
       <button class="clearx" id="clearAllBtn" type="button" title="clear all">&times;</button>
     </div>
-    <div class="suggest" id="suggestBox"></div>
   </div>
   <div class="row">
     <select id="categorySelect"><option value="">All categories</option></select>
@@ -412,7 +405,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.06-22";
+const APP_VERSION = "2026.09.07-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -793,64 +786,18 @@ function render(){
   }
 }
 
-const suggestBox = document.getElementById('suggestBox');
-let sugItems = [], sugSel = -1;
-
-function hideSuggest(){ suggestBox.classList.remove('open'); suggestBox.innerHTML=''; sugItems=[]; sugSel=-1; }
-
-function showSuggest(q){
-  q = q.trim().toLowerCase();
-  if(q.length < 2){ hideSuggest(); return; }
-  // rank: name prefix > start of any word in the name > anywhere in the name
-  // > category/location. The old loop stopped early and only ever looked at the
-  // very start of the name, so a second word stopped matching anything.
-  const starts = [], words = [], contains = [], meta = [];
-  for(const v of venues){
-    const n = (v.name||'').toLowerCase();
-    if(!n) continue;
-    if(n.startsWith(q)) starts.push(v);
-    else if(n.split(/[^a-z0-9]+/).some(w => w && w.startsWith(q))) words.push(v);
-    else if(n.includes(q)) contains.push(v);
-    else if(((v.category||'') + ' ' + (v.location||'')).toLowerCase().includes(q)) meta.push(v);
-    if(starts.length >= 8) break;
-  }
-  sugItems = starts.concat(words, contains, meta).slice(0, 8);
-  if(!sugItems.length){ hideSuggest(); return; }
-  suggestBox.innerHTML = sugItems.map((v,i) => `<div class="sug" data-i="${i}">${escapeHtml(v.name)}<small>${escapeHtml([v.category, v.location].filter(Boolean).join(' \u00b7 '))}</small></div>`).join('');
-  suggestBox.querySelectorAll('.sug').forEach(el => {
-    el.addEventListener('mousedown', ev => {
-      ev.preventDefault();
-      const v = sugItems[parseInt(el.dataset.i,10)];
-      hideSuggest();
-      openDetail(v);
-    });
-  });
-  sugSel = -1;
-  suggestBox.classList.add('open');
-}
-
+/* The primary search bar has no dropdown: the list below it filters live as you
+   type, which is the whole result set rather than a top-8 slice of it. Enter
+   just dismisses the keyboard; Escape clears the box. */
 document.getElementById('searchBox').addEventListener('input', e => {
-  state.query = e.target.value; state.shown=60; render();
-  showSuggest(e.target.value);
+  state.query = e.target.value; state.shown = 60; render();
 });
 document.getElementById('searchBox').addEventListener('keydown', e => {
-  if(!sugItems.length) return;
-  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
-    e.preventDefault();
-    sugSel += (e.key === 'ArrowDown' ? 1 : -1);
-    if(sugSel < 0) sugSel = sugItems.length - 1;
-    if(sugSel >= sugItems.length) sugSel = 0;
-    suggestBox.querySelectorAll('.sug').forEach((el,i) => el.classList.toggle('sel', i === sugSel));
-  } else if(e.key === 'Enter'){
-    const v = sugSel >= 0 ? sugItems[sugSel] : sugItems[0];
-    hideSuggest();
-    e.target.blur();
-    openDetail(v);
-  } else if(e.key === 'Escape'){
-    hideSuggest();
+  if(e.key === 'Enter'){ e.preventDefault(); e.target.blur(); }
+  else if(e.key === 'Escape'){
+    e.target.value = ''; state.query = ''; state.shown = 60; render(); e.target.blur();
   }
 });
-document.getElementById('searchBox').addEventListener('blur', () => setTimeout(hideSuggest, 120));
 document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; syncCategoryUI(); render(); });
 document.getElementById('catClear').addEventListener('click', clearCategory);
 document.querySelectorAll('.chip[data-rating]').forEach(chip => {
@@ -894,7 +841,6 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
   document.getElementById('nearChip').textContent='nearest';
   syncCategoryUI();
-  hideSuggest();
   render();
 });
 
@@ -1081,7 +1027,6 @@ function openDetail(v){
       render();
     });
   });
-  hideSuggest();
   overlay.classList.add('open');
   detailSheet.classList.add('open');
 }
@@ -1139,9 +1084,37 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     if(target){
       const cur = await resolveVenue(target);
       if(!cur){ alert('Could not find "' + target.name + '" in the sheet any more.'); return; }
+      // renaming onto a name+location that already exists would mint a twin the
+      // long way round: refuse rather than write it.
+      const clash = venues.find(x => String(x.index) !== String(cur.index)
+        && normTxt(x.name) === normTxt(rec.name)
+        && normTxt(x.location||'') === normTxt(rec.location||''));
+      if(clash){
+        alert(rec.name + (rec.location ? ' in ' + rec.location : '') +
+              ' is already on the list. Edit that row instead.');
+        return;
+      }
       await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
     } else {
-      await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
+      // An add must never append a second row for a name+location already on the
+      // list - that is where the duplicates came from. Re-read, and if the branch
+      // exists, fill in what it is missing instead of writing a twin.
+      await loadAll();
+      const twin = venues.find(x => normTxt(x.name) === normTxt(rec.name)
+        && normTxt(x.location||'') === normTxt(rec.location||''));
+      if(twin){
+        if(isClosed(twin)){ alert(closedError(twin).message); return; }
+        if(!confirm(rec.name + (rec.location ? ' in ' + rec.location : '') +
+                    ' is already on the list. Update that row with what you typed?')) return;
+        const merged = {};
+        COLS.forEach(c => {
+          const typed = String(rec[c] === undefined ? '' : rec[c]).trim();
+          merged[c] = typed || (twin[c] === undefined ? '' : twin[c]);
+        });
+        await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${twin.index})`, { values: [objToRow(merged)] });
+      } else {
+        await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
+      }
     }
     await loadAll();
     populateCategories();

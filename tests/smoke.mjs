@@ -396,6 +396,50 @@ const check = (name, fn) => {
   });
 }
 
+/* ---------- no twin rows, no search dropdown ---------- */
+{
+  const a = app({ venues: [V.zuni, V.philzSF, V.philzPA], menu: [] });
+  await a.settle(400);
+
+  a.w.eval('openForm(null)');
+  a.$('f_name').value = 'Zuni Cafe';
+  a.$('f_location').value = 'SF';
+  a.$('f_toOrder').value = 'roast chicken';
+  a.state.calls.length = 0;
+  a.click(a.$('saveForm')); await a.settle(300);
+  check('adding a name+location already on the list updates that row', () => {
+    if(a.state.calls.some(c => c.method === 'POST' && c.kind === 'venue'))
+      throw new Error('a twin row was appended');
+    if(a.state.venues.length !== 3) throw new Error('row count: ' + a.state.venues.length);
+    const row = a.state.venues.find(r => r[0] === 'Zuni Cafe');
+    if(row[3] !== 'roast chicken') throw new Error('typed value lost: ' + JSON.stringify(row));
+    if(row[1] !== 'American') throw new Error('existing field blanked: ' + JSON.stringify(row));
+  });
+
+  a.w.eval('openForm(null)');
+  a.$('f_name').value = 'Tartine Bakery';
+  a.$('f_location').value = 'SF';
+  a.state.calls.length = 0;
+  a.click(a.$('saveForm')); await a.settle(300);
+  check('a genuinely new name+location still adds a row', () => {
+    if(!a.state.calls.some(c => c.method === 'POST' && c.kind === 'venue'))
+      throw new Error('nothing was added');
+    if(a.state.venues.length !== 4) throw new Error('row count: ' + a.state.venues.length);
+  });
+
+  check('the primary search bar has no dropdown', () => {
+    if(a.w.document.getElementById('suggestBox')) throw new Error('suggest box still in the markup');
+    if(/showSuggest|hideSuggest/.test(html)) throw new Error('suggest handlers still wired up');
+  });
+  check('typing still filters the list live', () => {
+    const box = a.$('searchBox');
+    box.value = 'zuni'; a.fire(box, 'input');
+    const shown = a.$('list').textContent;
+    if(!/Zuni Cafe/.test(shown)) throw new Error('match missing');
+    if(/Philz/.test(shown)) throw new Error('non-match still listed');
+  });
+}
+
 console.log(results.join('\n'));
 console.log(failures ? `\n${failures} failing` : `\nall ${results.length} checks passed`);
 process.exit(failures ? 1 : 0);

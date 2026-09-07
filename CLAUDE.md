@@ -43,8 +43,14 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
   sandbox's git proxy will not issue credentials for this repo, so pushes go through
   **GitHub Desktop** (Repository ▸ Fetch, type the summary, Commit, Push). `.DS_Store` is
   tracked but should be left unchecked in commits.
-- Editing from a Cowork session: stage `index.html`, edit, commit it back to the same path
-  with `expectedMtimeMs`, then push from GitHub Desktop.
+- Editing from a Cowork session: with the folder connected, edit `index.html` in place
+  through `device_bash` (no staging round-trip, so none of the cached-bytes trouble below),
+  then push from GitHub Desktop.
+- **Git from `device_bash` leaves stale locks.** The shell cannot unlink, so every git
+  command leaves `.git/index.lock`, `.git/HEAD.lock` and `tmp_obj_*` files behind, and a
+  stale `index.lock` blocks GitHub Desktop. Ask for delete permission on the repo folder
+  once per session (`device_request_delete_permission`), and clear the locks after the
+  last git command.
 
 ## UI decisions worth keeping
 
@@ -61,6 +67,10 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
   margins zeroed — `.bulklink` brings a `margin-top` that otherwise drops it off the line.
 - Venue ordered page: add fields stay behind `+ add items`.
 - Sheets are dismissed with the `×`; panels have no cancel buttons.
+- The **primary search bar has no dropdown** (removed 2026.09.07-1). The list below it
+  already filters live and shows the whole result set; the box only ever showed a top-8
+  slice of the same thing. Enter dismisses the keyboard, Escape clears the box. The
+  `typedOnly` autocompletes on the form and `+` panel fields are unrelated and stay.
 
 ## Bugs found in review (fixed 2026.09.06-20) — worth not reintroducing
 
@@ -73,6 +83,41 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
   carries the log row's index and opens the branch that row resolved to.
 - `markChains` called `resolveVenue()` (a full `loadAll`) per row. PATCH does not shift row
   indexes, so one read per pass is enough — the 43-row backfill was 43 full table reads.
+
+## Duplicate rows — prevention and the 2026-09-07 cleanup
+
+The workbook held 19 duplicate rows. All were removed on 2026-09-07; backup at
+`archive/Food + Drink (pre-dedupe 20260907-021050).xlsx`. Two kinds:
+
+- **11 same name + same location** (Cinderella, Dumpling Home, Ensarro, Fiestabowls,
+  Frank Grizzly's, Grand Opening, Sofiya, Studio Estepan, Taqueria Los Mayas, Z&Y,
+  Zona Rosa) — the pre-`-20` edit bug. The newer row sat at the end of the table and
+  differed only by a refined `To Order` ("agua fresca" -> "agua fresca mango").
+- **8 same name + identical street address, one filed under `Multiple Locations`**
+  (Ariscault, Chuy's Fiestas, Cinderella, Ensarro, Fentons, Outta Sight Pizza, Tartine,
+  Yonsei) — the fake-location problem the data check's **Fix chain rows** button targets.
+
+Merge rule used, same as the app's: lowest row kept, first non-empty field wins,
+`To Order` unioned with a shorter entry absorbed by a longer one.
+
+Guards in `saveForm` (2026.09.07-1) so neither kind can come back:
+
+- the **add** branch re-reads and looks for the name+location before writing. If it is
+  already there it offers to update that row (typed values win, blanks keep what the row
+  had) instead of appending a twin; a closed row is refused outright.
+- the **edit** branch refuses a rename that would land on another row's name+location.
+
+Note a duplicate pair used to be self-perpetuating: two field-identical rows make
+`matchVenue()` return null, `resolveVenue()` throws the ambiguity error, the edit fails,
+and the obvious next move is to add the place again.
+
+Four same-name groups were **left alone** — no matching address to prove they are one
+venue, so each is either one chain row or per-branch rows and needs a call:
+Andytown Coffee Roasters (Local Chain + SF), Boudin Bakery (Millbrae + SF + Multiple
+Locations), Matcha Cafe Maiko (SF + Multiple Locations), Philz Coffee (Local Chain + SF).
+
+The live workbook is still **11 columns** — no `Chain`, no `Closed`. Both are added
+lazily on first use, so the closure work below has not touched the data yet.
 
 ## Closed places (2026.09.06-21)
 
@@ -171,8 +216,13 @@ Chat threads are disposable; this file is not. The routine:
 1. **Knowledge lives here, not in the thread.** Anything worth surviving — a data-model
    fact, a convention, a UI decision, an open item — gets written into this file in the
    same commit as the change that prompted it.
-2. **Start each work block in a fresh Cowork session**, linked to the Mac, with both
-   folders connected: this repo, and the OneDrive `the list/Food + Drink/Claude` folder.
+2. **Start each work block in a fresh Cowork session**, linked to the Mac, with exactly
+   two folders connected — no more:
+   - `~/Desktop/Invisible Hand/Apps/eat + drink/food-drink-app`
+   - `~/Library/CloudStorage/OneDrive-Personal/the list/Food + Drink/Claude`
+
+   Do **not** also connect the parent `eat + drink`: it holds nothing but the repo, so the
+   same files arrive under two mount paths and edits can be made through the wrong one.
    Opening line: *"read CLAUDE.md in food-drink-app, then …"*. That is the whole handoff.
 3. **Run the tests before and after any change**: `node tests/smoke.mjs` (`npm i jsdom`
    once). They stub MSAL and Graph, so the live workbook is never touched.
