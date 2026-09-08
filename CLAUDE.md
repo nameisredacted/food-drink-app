@@ -21,6 +21,22 @@ Single-file web app for a personal food/drink list. `index.html` is the whole ap
 
 `Name | Category | Location | To Order | Rating | Notes | Has Menu Detail | Address | Lat | Lng | Geo Precision | Chain`
 
+**Never widen a table's `ref` in openpyxl without adding the matching `tableColumn`
+entries.** Setting `ws.tables['FoodDrinkTable'].ref` to `A1:M…` while `xl/tables/table1.xml`
+still declares `<tableColumns count="11">` produces a file Excel opens but the Graph API
+refuses outright:
+
+    501 {"code":"FileCorruptTryRepair" … "code":"unsupportedWorkbook",
+    "message":"The workbook contains unsupported features or exceeds the size limit."}
+
+That is what broke the app on 2026-09-08. The fix is to patch `xl/tables/table1.xml`
+in the zip — bump `count` and append `<tableColumn id="12" name="Chain"/>` and
+`<tableColumn id="13" name="Closed"/>` — not to restore a backup. openpyxl does not
+maintain `tableColumn` entries for you, and its own `Table` object will not add them when
+`ref` changes. After any structural edit, check that the table's ref, its `tableColumns
+count`, the number of `tableColumn` elements and the sheet's `dimension` all agree, and
+that every column has a non-empty, unique name.
+
 The workbook now carries all 13 columns — `Chain` (12th) and `Closed` (13th) were written
 into it directly on 2026-09-07, so neither is added lazily any more.
 
