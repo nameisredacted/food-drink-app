@@ -524,22 +524,16 @@ const check = (name, fn) => {
   });
 }
 
-/* ---------- straight to an order ---------- */
+/* ---------- an order at a place that is not on the list yet ---------- */
 {
   const a = app({ venues: [V.zuni], menu: [M.zuni] });
   await a.settle(400);
 
-  a.click(a.$('orderChip')); await a.settle(200);
-  check('one tap opens the order line, cursor in "where"', () => {
-    if(!a.$('logSheet').className.includes('open')) throw new Error('ordered sheet not open');
-    if(a.w.document.activeElement.id !== 'lg_venue') throw new Error('focus: ' + a.w.document.activeElement.id);
-  });
-
+  a.click(a.$('logLink')); await a.settle(200);
   a.$('lg_venue').value = 'Juans Place'; a.fire(a.$('lg_venue'), 'input'); await a.settle();
-  a.$('lg_what').focus(); await a.settle();
-  check('an unknown place opens its fields while the item is typed', () => {
+  a.click(a.$('lg_newLoc')); await a.settle();
+  check('the + opens the fields for a place the list does not have', () => {
     if(a.$('lg_new').style.display === 'none') throw new Error('fields still hidden');
-    if(a.w.document.activeElement.id !== 'lg_what') throw new Error('focus was stolen');
   });
 
   a.$('lg_what').value = 'lomo saltado';

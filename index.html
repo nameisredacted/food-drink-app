@@ -271,7 +271,7 @@ select.on{color:#111;font-weight:700;}
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
     <div class="searchrow">
-      <input class="search" id="searchBox" placeholder="search..." autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+      <input class="search" id="searchBox" placeholder="search…" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
       <button class="clearx" id="clearAllBtn" type="button" title="clear all">&times;</button>
     </div>
   </div>
@@ -283,7 +283,6 @@ select.on{color:#111;font-weight:700;}
     <div class="chip" data-rating="n">n</div>
     <div class="chip near" id="nearChip">nearest</div>
     <div class="chip dice" id="diceChip">pick one</div>
-    <div class="chip" id="orderChip">log an order</div>
   </div>
   <div class="count" id="resultCount"></div>
   <div class="count" id="geoNote" style="display:none;">* approximate (ZIP-level) — refines as you use it</div>
@@ -308,9 +307,9 @@ select.on{color:#111;font-weight:700;}
   <button class="addRowBtn" id="mp_new" type="button" style="margin-top:14px;">+ add items</button>
   <div id="mp_addWrap" style="display:none;">
     <div class="addline">
-      <input class="sec" id="mp_vendor" placeholder="Vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
-      <input class="sec" id="mp_section" placeholder="Category" autocomplete="off" autocapitalize="words" spellcheck="false">
-      <input id="mp_item" placeholder="Item ordered" autocomplete="off">
+      <input class="sec" id="mp_vendor" placeholder="vendor (optional)" autocomplete="off" autocapitalize="words" spellcheck="false">
+      <input class="sec" id="mp_section" placeholder="category" autocomplete="off" autocapitalize="words" spellcheck="false">
+      <input id="mp_item" placeholder="item ordered" autocomplete="off">
       <button id="mp_add" type="button">add</button>
       <button id="mp_cancel" type="button">cancel</button>
     </div>
@@ -335,7 +334,7 @@ select.on{color:#111;font-weight:700;}
 <div class="sheet" id="logSheet">
   <button class="close-x" id="closeLog">&times;</button>
   <h2>ordered</h2>
-  <div class="searchrow"><input class="search" id="logSearch" placeholder="search..." autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+  <div class="searchrow"><input class="search" id="logSearch" placeholder="search…" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
   <div class="addline">
     <div class="ac-wrap"><input class="sec" id="lg_venue" placeholder="where" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
     <div class="ac-wrap"><input id="lg_what" placeholder="what" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
@@ -365,7 +364,7 @@ select.on{color:#111;font-weight:700;}
 
 <div class="sheet" id="formSheet">
   <button class="close-x" id="closeForm">&times;</button>
-  <h2 id="formTitle">Add Spot</h2>
+  <h2 id="formTitle">add a place</h2>
   <div class="sub">Writes directly to your Excel file in OneDrive.</div>
   <div class="field"><label>Name</label><input id="f_name"></div>
   <div class="field"><label>Category</label>
@@ -393,10 +392,10 @@ select.on{color:#111;font-weight:700;}
 <div class="sheet" id="menuFormSheet">
   <button class="close-x" id="closeMenuForm">&times;</button>
   <button class="back-link" id="backToMenuPage">&lsaquo; back</button>
-  <h2 id="menuFormTitle">Log eaten</h2>
+  <h2 id="menuFormTitle">add several items</h2>
   <div class="sub">Writes directly to the Menu Details sheet in your Excel file.</div>
   <div id="menuRows"></div>
-  <button class="addRowBtn" id="addMenuRowBtn" type="button">+ Add category</button>
+  <button class="addRowBtn" id="addMenuRowBtn" type="button">+ add category</button>
   <div class="btnrow">
     <button class="btn ghost" id="cancelMenuForm">Cancel</button>
     <button class="btn primary" id="saveMenuForm">Save</button>
@@ -405,7 +404,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.19-1";
+const APP_VERSION = "2026.09.19-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1136,7 +1135,7 @@ let editingVenue = null;
 function openForm(v){
   if(v && isClosed(v)){ alert(closedError(v).message); return; }
   editingVenue = v || null;
-  document.getElementById('formTitle').textContent = v ? 'Edit Spot' : 'Add Spot';
+  document.getElementById('formTitle').textContent = v ? 'edit place' : 'add a place';
   document.getElementById('f_name').value = v ? (v.name||'') : '';
   document.getElementById('f_category').value = v ? (v.category||'') : '';
   document.getElementById('f_location').value = v ? (v.location||'') : '';
@@ -1172,7 +1171,7 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : '',
     chain: editingVenue ? (editingVenue.chain||'') : ''   // never blank an existing flag
   };
-  if(!rec.name){ alert('Name is required'); return; }
+  if(!rec.name){ alert('Enter a name.'); return; }
   rememberCategory(rec.category);   // typed once, offered from then on
   // closeForm() clears editingVenue, so hold on to it first: without this the
   // save fell through to the "add" branch and every edit wrote a second row.
@@ -1904,7 +1903,7 @@ function describeNewPlace(name, location){   // writes the line beside the plus
   if(row.style.display === 'none') document.getElementById('lg_sameBrand').checked = true;
   row.style.display = '';
 }
-function showNewPlace(name, keepFocus){
+function showNewPlace(name){
   hideMultiPlace();
   const again = pendingNewPlace && normTxt(pendingNewPlace) === normTxt(name);
   pendingNewPlace = name;
@@ -1919,7 +1918,7 @@ function showNewPlace(name, keepFocus){
   });
   attachAutocomplete(cat, categoryOptions, { typedOnly: true });
   document.getElementById('lg_new').style.display = '';
-  if(!keepFocus) loc.focus();
+  loc.focus();
 }
 function hideNewPlace(){
   pendingNewPlace = null;
@@ -2030,11 +2029,7 @@ document.getElementById('lg_what').addEventListener('keydown', e => {
   if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addLogItem();
 });
 
-/* `focus` opens it as an entry screen: cursor in "where", type the place and
-   what was ordered and nothing else is needed. A name the list does not have is
-   not a dead end - the location/cuisine fields open under it and confirming
-   writes the venue and the item together. */
-function openLog(prefillVenue, focus){
+function openLog(prefillVenue){
   hideNewPlace(); hideMultiPlace();
   document.getElementById('logSearch').value='';
   document.getElementById('lg_venue').value = prefillVenue || '';
@@ -2046,23 +2041,9 @@ function openLog(prefillVenue, focus){
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
-  if(focus) setTimeout(() => {
-    const el = document.getElementById(prefillVenue ? 'lg_what' : 'lg_venue');
-    if(el) el.focus();
-  }, 60);
 }
 function closeLog(){ hideNewPlace(); hideMultiPlace(); overlay.classList.remove('open'); logSheet.classList.remove('open'); }
 document.getElementById('logLink').addEventListener('click', () => openLog());
-/* straight to an order, from the main screen, without finding the place first */
-document.getElementById('orderChip').addEventListener('click', () => openLog('', true));
-/* the fields for a place the list does not have open as soon as the item is
-   being typed, so the new place is not a surprise at the end of the line */
-document.getElementById('lg_what').addEventListener('focus', () => {
-  const name = document.getElementById('lg_venue').value.trim();
-  if(!name || brandRows(name).length) return;
-  if(document.getElementById('lg_new').style.display !== 'none') return;
-  showNewPlace(name, true);
-});
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
 
@@ -2074,8 +2055,8 @@ function addMenuRow(key, val){
   const row = document.createElement('div');
   row.className = 'menurow';
   row.innerHTML = `
-    <div class="ac-wrap"><input class="mkey" placeholder="Section (e.g. Appetizers)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false"></div>
-    <input class="mval" placeholder="Item you ate" value="${escapeHtml(val||'')}">
+    <div class="ac-wrap"><input class="mkey" placeholder="category (e.g. Mains)" value="${escapeHtml(key||'')}" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+    <input class="mval" placeholder="item ordered" value="${escapeHtml(val||'')}">
     <button class="rm" type="button">&times;</button>
   `;
   row.querySelector('.rm').addEventListener('click', () => row.remove());
@@ -2085,7 +2066,7 @@ function addMenuRow(key, val){
 
 function openMenuForm(v){
   menuEditingVenue = v;
-  document.getElementById('menuFormTitle').textContent = 'Log eaten — ' + v.name;
+  document.getElementById('menuFormTitle').textContent = 'add several items — ' + v.name;
   const wrap = document.getElementById('menuRows');
   wrap.innerHTML = '';
   addMenuRow('', ''); addMenuRow('', '');

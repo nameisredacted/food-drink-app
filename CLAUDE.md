@@ -353,18 +353,34 @@ openpyxl) is the fix if that starts to bite.
 The **filter dropdown is deliberately left out of this**: it filters rows, so an entry no
 row carries would only ever return nothing.
 
-## Straight to an order (2026.09.19-1)
+## Ordering at a place that is not on the list — already built (2026.09.19-2)
 
-`log an order` sits in the chip row beside `pick one`: one tap opens the ordered sheet with
-the cursor in *where*. Type the place and the item and nothing else is needed. A name the
-list does not have is not a dead end — the location/cuisine fields now open **as the item is
-being typed** (focus on `lg_what`, `showNewPlace(name, keepFocus)`), and confirming writes
-the venue row and the log row together, marks `Has Menu Detail`, and leaves the place on the
-list behind the sheet.
+**This path already existed** and needs nothing added. On the ordered sheet, type the place
+in *where* and the dish in *what*; the **+** beside the copy line opens location and cuisine,
+and confirming writes the venue row and the log row together and marks `Has Menu Detail`
+(`addPlaceThenLog`, shipped 2026.09.06-5). Pressing add with a name the list does not have
+gets to the same place on its own.
 
-`showJustEntered(name)` puts what was entered in the search box: the list shows nothing until
-something is being searched for, so a new place would otherwise land behind an empty screen
-and read as lost.
+A `log an order` chip was added in `-1` and **taken out again in `-2`**: it was a second door
+into a room that already had one. If the path ever feels buried, the fix is the copy on the
+existing line, not another entry point.
+
+What does belong to the recent work: `showJustEntered(name)` puts what was just entered in
+the search box. The list shows nothing until something is being searched for, so a place
+entered — through the form or through the ordered sheet — would otherwise land behind an
+empty screen and read as lost.
+
+## Copy (2026.09.19-2)
+
+One voice, and it is lowercase. Sheet headings and buttons read as the app talking, not as a
+form: `ordered`, `add a place` / `edit place` (was *Add Spot* / *Edit Spot*), `add several
+items` (was *Log eaten*), `data check`, `+ add items`, `+ add category`. Placeholders are
+lowercase throughout — `search…` (a real ellipsis), `where`, `what`, `location`,
+`cuisine (optional)`, `vendor (optional)`, `category`, `item ordered`. **Field labels keep
+their capitals** (Name, Category, Location, Rating, To Order, Notes): they name workbook
+columns.
+
+Alerts are one plain sentence and end in a full stop — `Enter a name.`, `Enter an item.`
 
 ## Working on this across sessions
 
