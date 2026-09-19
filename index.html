@@ -283,6 +283,7 @@ select.on{color:#111;font-weight:700;}
     <div class="chip" data-rating="n">n</div>
     <div class="chip near" id="nearChip">nearest</div>
     <div class="chip dice" id="diceChip">pick one</div>
+    <div class="chip" id="orderChip">log an order</div>
   </div>
   <div class="count" id="resultCount"></div>
   <div class="count" id="geoNote" style="display:none;">* approximate (ZIP-level) — refines as you use it</div>
@@ -404,7 +405,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.07-2";
+const APP_VERSION = "2026.09.19-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -565,6 +566,76 @@ let venuesByKey = new Map();
 let venuesByName = new Map();
 let orphanMenuRows = [];
 
+/* ====== WRITES THE NEXT READ HAS NOT CAUGHT UP WITH ======
+   Graph serves the pre-write copy of a table for a moment after a write: the
+   read that follows a delete could still carry the deleted row, and the read
+   that follows an add could still be missing it - so a deleted place stayed on
+   the list and a place just entered was not there to use. The intent of each
+   write is recorded here, every load re-applies it to whatever came back, and
+   an entry clears itself the moment a read agrees. Nothing is invented: an
+   entry only ever hides a row that was deleted or shows a row that was written. */
+let pendingAdds = [];      // rows written that the read has not shown yet
+let pendingDeletes = [];   // vkeys deleted that the read may still show
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function forgetPending(key){
+  pendingAdds = pendingAdds.filter(r => vKey(r) !== key);
+  pendingDeletes = pendingDeletes.filter(k => k !== key);
+}
+function applyPending(){
+  if(pendingDeletes.length){
+    const gone = new Set(pendingDeletes);
+    // a key the read has already dropped is settled; the rest are still stale
+    pendingDeletes = pendingDeletes.filter(k => venues.some(v => vKey(v) === k));
+    venues = venues.filter(v => !gone.has(vKey(v)));
+  }
+  if(pendingAdds.length){
+    pendingAdds = pendingAdds.filter(rec => !venues.some(v => vKey(v) === vKey(rec)));
+    // no table index yet, and flagged: it can be found and logged against, but
+    // nothing may PATCH or DELETE against a row whose index is a guess
+    pendingAdds.forEach(rec => venues.push(Object.assign({}, rec, { index: null, pending: true })));
+  }
+}
+/* re-read until the read reflects the write just made */
+async function loadUntil(test, tries){
+  tries = tries === undefined ? 3 : tries;
+  for(let i = 0; i < tries; i++){
+    if(i) await wait(300 * i);
+    await loadAll();
+    if(test()) return true;
+  }
+  return false;
+}
+/* Rows the sheet has actually acknowledged. Every repair and every bulk pass
+   works off this: a row still waiting for its first read has no table index,
+   so it is nothing a PATCH or a DELETE may aim at. */
+function liveVenues(){ return venues.filter(v => !v.pending); }
+function pendingError(v){
+  const e = new Error('"' + (v.name||'') + '" is still being written to the sheet. Give it a moment.');
+  e.userFacing = true;
+  return e;
+}
+
+/* ====== CATEGORIES ======
+   The suggestions are whatever the sheet already holds, so a cuisine typed for
+   the first time was not offered until the read caught up with the write, and
+   was gone again if its one row was deleted. Every category typed is kept here
+   as well and unioned into the suggestions. The sheet stays the record - this
+   is only the list of what has been typed, per browser. The filter dropdown is
+   deliberately left alone: it filters rows, so a category no row carries would
+   only ever return nothing. */
+const CAT_STORE = 'eatdrink.categories';
+let extraCategories = [];
+try{
+  extraCategories = JSON.parse(localStorage.getItem(CAT_STORE) || '[]').filter(x => typeof x === 'string');
+}catch(e){ extraCategories = []; }
+function rememberCategory(text){
+  const t = String(text == null ? '' : text).trim();
+  if(!t) return;
+  if(extraCategories.some(c => normTxt(c) === normTxt(t))) return;
+  extraCategories.push(t);
+  try{ localStorage.setItem(CAT_STORE, JSON.stringify(extraCategories)); }catch(e){}
+}
+
 /* Attach one logged item to a venue row. Exact name+location first; then a
    unique name; then a name whose location is a broader or narrower form of
    the logged one ("North Bay, CA" vs "Healdsburg, CA"). Anything left over is
@@ -599,6 +670,7 @@ async function loadAll(){
   if(rows.length && Array.isArray(rows[0].values && rows[0].values[0]))
     mainWidth = Math.max(BASE_WIDTH, rows[0].values[0].length);
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
+  applyPending();   // a delete or an add this read is too early to show
 
   // indexes used to attach menu rows to the right branch
   venuesByKey = new Map();
@@ -687,7 +759,15 @@ function matches(v){
 // re-read and re-match immediately before writing.
 async function resolveVenue(v){
   await loadAll();
-  const m = matchVenue(v);
+  let m = matchVenue(v);
+  // a row written seconds ago may not be in the read yet: it carries no table
+  // index, so wait for the real one rather than writing against a guess
+  for(let i = 0; m && m.pending && i < 3; i++){
+    await wait(300 * (i + 1));
+    await loadAll();
+    m = matchVenue(v);
+  }
+  if(m && m.pending) throw pendingError(v);
   if(!m && venues.some(x => vKey(x) === vKey(v))) throw ambiguityError(v);
   return m;
 }
@@ -740,6 +820,16 @@ function clearCategory(){
   document.getElementById('categorySelect').value = '';
   syncCategoryUI();
   render();
+}
+
+/* The list shows nothing until something is being searched for, so a place just
+   entered would otherwise land behind an empty screen. Put it in the search box
+   so the row that was just written is the thing being looked at. */
+function showJustEntered(name){
+  const box = document.getElementById('searchBox');
+  if(box) box.value = name;
+  state.query = name;
+  state.shown = 60;
 }
 
 function isBrowsing(){
@@ -1023,8 +1113,13 @@ function openDetail(v){
     await withBusy(async () => {
       const cur = await resolveVenue(v);
       if(!cur){ alert('Could not find "' + v.name + '" in the sheet any more.'); render(); return; }
+      const key = vKey(cur);
       await deleteTableRow(MAIN_SHEET, MAIN_TABLE, cur.index);
-      await loadAll();
+      // the row is gone; hold that over the next read, which can still hand
+      // back the pre-delete table, so the list drops it now rather than later
+      forgetPending(key);
+      pendingDeletes.push(key);
+      await loadUntil(() => !pendingDeletes.includes(key));
       populateCategories();
       render();
     });
@@ -1078,10 +1173,12 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     chain: editingVenue ? (editingVenue.chain||'') : ''   // never blank an existing flag
   };
   if(!rec.name){ alert('Name is required'); return; }
+  rememberCategory(rec.category);   // typed once, offered from then on
   // closeForm() clears editingVenue, so hold on to it first: without this the
   // save fell through to the "add" branch and every edit wrote a second row.
   const target = editingVenue;
   closeForm();
+  let added = null;
   await withBusy(async () => {
     if(target){
       const cur = await resolveVenue(target);
@@ -1116,9 +1213,20 @@ document.getElementById('saveForm').addEventListener('click', async () => {
         await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${twin.index})`, { values: [objToRow(merged)] });
       } else {
         await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`, { values: [objToRow(rec)] });
+        added = rec;
       }
+      // usable straight away: on the list whether or not the read has caught
+      // up, and on screen rather than behind an empty search
+      forgetPending(venueKey(rec.name, rec.location));
+      if(added) pendingAdds.push(rec);
+      showJustEntered(rec.name);
     }
-    await loadAll();
+    if(added){
+      const key = venueKey(added.name, added.location);
+      await loadUntil(() => !pendingAdds.some(r => vKey(r) === key));
+    } else {
+      await loadAll();
+    }
     populateCategories();
     render();
   });
@@ -1346,7 +1454,16 @@ function distinctValues(getter, src){
     return { label: e[0][0], n: e.reduce((s,x) => s + x[1], 0) };
   }).sort((a,b) => b.n - a.n || a.label.localeCompare(b.label));
 }
-function categoryOptions(){ return distinctValues(v => v.category).map(x => x.label); }
+function categoryOptions(){
+  // the sheet's own first, most used first, then anything typed that no row carries
+  const out = distinctValues(v => v.category).map(x => x.label);
+  const seen = new Set(out.map(normTxt));
+  extraCategories.forEach(c => {
+    if(seen.has(normTxt(c))) return;
+    seen.add(normTxt(c)); out.push(c);
+  });
+  return out;
+}
 function locationOptions(){ return distinctValues(v => v.location).map(x => x.label); }
 function vendorOptions(){ return distinctValues(r => r.vendor, menuRows).map(x => x.label); }
 function venueNameOptions(){ return distinctValues(v => v.name).map(x => x.label); }
@@ -1609,10 +1726,10 @@ async function markChains(names){
   if(!want.size) return 0;
   if(!await ensureChainColumn()) return 0;
   await loadAll();   // one read for the pass; PATCH does not shift row indexes
-  const todo = venues.filter(v => want.has(normTxt(v.name)) && !isChain(v));
+  const todo = liveVenues().filter(v => want.has(normTxt(v.name)) && !isChain(v));
   for(const v of todo){
     const cur = matchVenue(v);
-    if(!cur) continue;                      // duplicate or vanished — skip, never guess
+    if(!cur || cur.pending) continue;       // duplicate, vanished or not read back yet
     const rec = Object.assign({}, cur, { chain: 'x' });
     delete rec.index;
     await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`,
@@ -1634,7 +1751,7 @@ function multiLocationNames(){
 }
 function unmarkedChainRows(){
   const multi = new Set(multiLocationNames());
-  return venues.filter(v => multi.has(normTxt(v.name)) && !isChain(v));
+  return liveVenues().filter(v => multi.has(normTxt(v.name)) && !isChain(v));
 }
 
 /* Closures confirmed against published round-ups and the venues' own listings,
@@ -1648,11 +1765,11 @@ function unmarkedChainRows(){
    own initiative. */
 const PSEUDO_LOCATIONS = ['multiple locations','local chain','national chain','international chain','chain'];
 function isPseudoLocation(loc){ return PSEUDO_LOCATIONS.indexOf(normTxt(loc)) >= 0; }
-function chainUmbrellaRows(){ return venues.filter(v => isPseudoLocation(v.location)); }
+function chainUmbrellaRows(){ return liveVenues().filter(v => isPseudoLocation(v.location)); }
 
 function duplicateGroups(){
   const by = new Map();
-  venues.forEach(v => { const k = vKey(v); if(!by.has(k)) by.set(k, []); by.get(k).push(v); });
+  liveVenues().forEach(v => { const k = vKey(v); if(!by.has(k)) by.set(k, []); by.get(k).push(v); });
   return [...by.values()].filter(g => g.length > 1);
 }
 /* Keep the lowest row and fold the others into it: first non-empty wins per
@@ -1683,7 +1800,7 @@ function strayLogRows(){
   menuRows.forEach(r => {
     if(!r.item || r.item === '(no items recorded)') return;
     if(venues.some(v => vKey(v) === venueKey(r.venue, r.location))) return;
-    const byName = venues.filter(v => normTxt(v.name) === normTxt(r.venue));
+    const byName = liveVenues().filter(v => normTxt(v.name) === normTxt(r.venue));
     if(byName.length === 1) out.push({ row: r, to: byName[0] });
   });
   return out;
@@ -1787,7 +1904,7 @@ function describeNewPlace(name, location){   // writes the line beside the plus
   if(row.style.display === 'none') document.getElementById('lg_sameBrand').checked = true;
   row.style.display = '';
 }
-function showNewPlace(name){
+function showNewPlace(name, keepFocus){
   hideMultiPlace();
   const again = pendingNewPlace && normTxt(pendingNewPlace) === normTxt(name);
   pendingNewPlace = name;
@@ -1802,7 +1919,7 @@ function showNewPlace(name){
   });
   attachAutocomplete(cat, categoryOptions, { typedOnly: true });
   document.getElementById('lg_new').style.display = '';
-  loc.focus();
+  if(!keepFocus) loc.focus();
 }
 function hideNewPlace(){
   pendingNewPlace = null;
@@ -1818,6 +1935,7 @@ async function addPlaceThenLog(){
   if(!item){ alert('Enter an item.'); itemIn.focus(); return; }
   const location = document.getElementById('lg_location').value.trim();
   const category = document.getElementById('lg_category').value.trim();
+  rememberCategory(category);   // typed once, offered from then on
   // this exact branch already exists: log against it instead of making a twin
   const twin = venues.find(x => normTxt(x.name) === normTxt(name) && normTxt(x.location||'') === normTxt(location));
   if(twin){
@@ -1856,8 +1974,14 @@ async function addPlaceThenLog(){
       { values: [objToRow(rec)] });
     await graph('POST', `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`,
       { values: [[name, location, '', sec, item]] });
-    await loadAll();
+    // the place exists from this moment, read or no read: it is on the list, it
+    // is in the suggestions, and the next item can be logged against it
+    const key = venueKey(name, location);
+    forgetPending(key);
+    pendingAdds.push(rec);
+    await loadUntil(() => !pendingAdds.some(r => vKey(r) === key));
     if(sameBrand){ await markChains([name]); await loadAll(); }
+    showJustEntered(name);
     populateCategories(); render();
     hideNewPlace();
     nameIn.value = name;            // stay on the new place for the next item
@@ -1906,7 +2030,11 @@ document.getElementById('lg_what').addEventListener('keydown', e => {
   if(e.key === 'Enter' && !document.querySelector('#logSheet .ac-box.open')) addLogItem();
 });
 
-function openLog(prefillVenue){
+/* `focus` opens it as an entry screen: cursor in "where", type the place and
+   what was ordered and nothing else is needed. A name the list does not have is
+   not a dead end - the location/cuisine fields open under it and confirming
+   writes the venue and the item together. */
+function openLog(prefillVenue, focus){
   hideNewPlace(); hideMultiPlace();
   document.getElementById('logSearch').value='';
   document.getElementById('lg_venue').value = prefillVenue || '';
@@ -1918,9 +2046,23 @@ function openLog(prefillVenue){
   renderLog();
   overlay.classList.add('open');
   logSheet.classList.add('open');
+  if(focus) setTimeout(() => {
+    const el = document.getElementById(prefillVenue ? 'lg_what' : 'lg_venue');
+    if(el) el.focus();
+  }, 60);
 }
 function closeLog(){ hideNewPlace(); hideMultiPlace(); overlay.classList.remove('open'); logSheet.classList.remove('open'); }
 document.getElementById('logLink').addEventListener('click', () => openLog());
+/* straight to an order, from the main screen, without finding the place first */
+document.getElementById('orderChip').addEventListener('click', () => openLog('', true));
+/* the fields for a place the list does not have open as soon as the item is
+   being typed, so the new place is not a surprise at the end of the line */
+document.getElementById('lg_what').addEventListener('focus', () => {
+  const name = document.getElementById('lg_venue').value.trim();
+  if(!name || brandRows(name).length) return;
+  if(document.getElementById('lg_new').style.display !== 'none') return;
+  showNewPlace(name, true);
+});
 document.getElementById('closeLog').addEventListener('click', closeLog);
 document.getElementById('logSearch').addEventListener('input', renderLog);
 
@@ -2117,9 +2259,9 @@ function findDataIssues(){
     else seen.set(k, v);
   });
   const logged = new Set(menuRows.filter(r => r.vkey && r.item).map(r => r.vkey));
-  const falseFlags = venues.filter(v => (v.hasMenuDetail||'').trim() === 'x' && !logged.has(vKey(v)));
-  const missingFlags = venues.filter(v => (v.hasMenuDetail||'').trim() !== 'x' && logged.has(vKey(v)));
-  const noGeo = venues.filter(v => !v.lat || !v.lng);
+  const falseFlags = liveVenues().filter(v => (v.hasMenuDetail||'').trim() === 'x' && !logged.has(vKey(v)));
+  const missingFlags = liveVenues().filter(v => (v.hasMenuDetail||'').trim() !== 'x' && logged.has(vKey(v)));
+  const noGeo = liveVenues().filter(v => !v.lat || !v.lng);
   const unchained = unmarkedChainRows();
   const dupeGroups = duplicateGroups();
   const umbrellas = chainUmbrellaRows();

@@ -13,8 +13,12 @@ const html = readFileSync(join(here, '..', 'index.html'), 'utf8')
 // the running build's own version, so the update check stays quiet in tests
 const VERSION = (/const APP_VERSION = "([^"]+)"/.exec(html) || [])[1] || 'test';
 
-function app({ venues = [], menu = [] } = {}){
+/* `stale: n` models what Graph actually does: for the n reads after a write it
+   still serves the pre-write copy of the table. That is what left a deleted
+   place on the list and a place just entered missing from it. */
+function app({ venues = [], menu = [], stale = 0 } = {}){
   const state = { venues: venues.map(r => r.slice()), menu: menu.map(r => r.slice()), calls: [] };
+  let snapV = state.venues.map(r => r.slice()), snapM = state.menu.map(r => r.slice()), lag = 0;
   const rows = v => ({ value: v.map((r, i) => ({ index: i, values: [r] })) });
   const dom = new JSDOM(html, {
     runScripts: 'dangerously',
@@ -30,6 +34,7 @@ function app({ venues = [], menu = [] } = {}){
         if(u.includes('version.txt')) return { ok: true, status: 200, async text(){ return VERSION; } };
         const isMenu = u.includes('MenuDetails');
         if(m !== 'GET'){
+          if(stale && !lag){ snapV = state.venues.map(r => r.slice()); snapM = state.menu.map(r => r.slice()); }
           const idx = (/itemAt\(index=(\d+)\)/.exec(u) || [])[1];
           const kind = u.includes('/columns') ? 'addcol' : (isMenu ? 'menu' : 'venue');
           state.calls.push({ method: m, kind, body: opts.body && JSON.parse(opts.body), index: idx && +idx });
@@ -38,7 +43,13 @@ function app({ venues = [], menu = [] } = {}){
           else if(m === 'PATCH') table[+idx] = JSON.parse(opts.body).values[0];
           else if(m === 'DELETE') table.splice(+idx, 1);
           else if(m === 'POST') table.push(JSON.parse(opts.body).values[0]);
+          if(stale) lag = stale;
           return { ok: true, status: 201, async json(){ return {}; }, async text(){ return ''; } };
+        }
+        if(lag > 0){
+          const old = isMenu ? rows(snapM) : rows(snapV);
+          if(!isMenu) lag--;      // one venue read consumed
+          return { ok: true, status: 200, async json(){ return old; }, async text(){ return JSON.stringify(old); } };
         }
         const body = isMenu ? rows(state.menu) : rows(state.venues);
         return { ok: true, status: 200, async json(){ return body; }, async text(){ return JSON.stringify(body); } };
@@ -457,6 +468,99 @@ const check = (name, fn) => {
     const shown = a.$('list').textContent;
     if(!/Zuni Cafe/.test(shown)) throw new Error('match missing');
     if(/Philz/.test(shown)) throw new Error('non-match still listed');
+  });
+}
+
+/* ---------- a write the read has not caught up with ---------- */
+{
+  // 20 stale reads: the read never agrees inside the app's retry window, so
+  // only the write-through overlay can keep the list honest
+  const a = app({ venues: [V.zuni, V.philzSF, V.philzPA], menu: [M.zuni], stale: 20 });
+  await a.settle(400);
+
+  a.w.eval("openDetail(venues.find(v => v.name === 'Zuni Cafe'))");
+  a.state.calls.length = 0;
+  a.click(a.$('deleteBtn')); await a.settle(1600);   // three reads, none of them fresh
+  check('delete takes the place off the list at once', () => {
+    if(!a.state.calls.some(c => c.method === 'DELETE')) throw new Error('nothing was deleted');
+    if(a.w.eval("venues.some(v => v.name === 'Zuni Cafe')")) throw new Error('still in the model');
+    a.w.eval("state.query = 'zuni'; render();");
+    if(/Zuni Cafe/.test(a.$('list').textContent)) throw new Error('still on the list');
+  });
+  check('deleting does not disturb anything else', () => {
+    if(a.w.eval('venues.length') !== 2) throw new Error('rows: ' + a.w.eval('venues.length'));
+  });
+}
+
+{
+  const a = app({ venues: [V.zuni, V.philzSF], menu: [], stale: 20 });
+  await a.settle(400);
+
+  a.w.eval('openForm(null)');
+  a.$('f_name').value = 'Juans Place';
+  a.$('f_location').value = 'SF';
+  a.$('f_category').value = 'Peruvian';
+  a.state.calls.length = 0;
+  a.click(a.$('saveForm')); await a.settle(1600);   // three reads, none of them fresh
+
+  check('a place just entered is usable straight away', () => {
+    if(!a.state.calls.some(c => c.method === 'POST' && c.kind === 'venue')) throw new Error('nothing written');
+    if(!a.w.eval("venues.some(v => v.name === 'Juans Place')")) throw new Error('not in the model');
+    if(!a.w.eval("venueNameOptions().includes('Juans Place')")) throw new Error('not offered as a name');
+    if(!/Juans Place/.test(a.$('list').textContent)) throw new Error('not on screen');
+  });
+  check('the row it is waiting on is never written to', () => {
+    if(!a.w.eval("venues.find(v => v.name === 'Juans Place').pending")) throw new Error('test assumes it is still pending');
+    if(a.w.eval("liveVenues().some(v => v.name === 'Juans Place')")) throw new Error('a repair could aim at it');
+  });
+  check('a category typed once is offered from then on', () => {
+    if(!a.w.eval("categoryOptions().includes('Peruvian')")) throw new Error('new category not suggested');
+    if(a.w.eval("JSON.parse(localStorage.getItem('eatdrink.categories')||'[]').indexOf('Peruvian')") < 0)
+      throw new Error('new category not kept');
+  });
+  check('a category the sheet already has is not duplicated', () => {
+    const n = a.w.eval("categoryOptions().filter(c => c.toLowerCase() === 'american').length");
+    if(n !== 1) throw new Error('american appears ' + n + ' times');
+  });
+}
+
+/* ---------- straight to an order ---------- */
+{
+  const a = app({ venues: [V.zuni], menu: [M.zuni] });
+  await a.settle(400);
+
+  a.click(a.$('orderChip')); await a.settle(200);
+  check('one tap opens the order line, cursor in "where"', () => {
+    if(!a.$('logSheet').className.includes('open')) throw new Error('ordered sheet not open');
+    if(a.w.document.activeElement.id !== 'lg_venue') throw new Error('focus: ' + a.w.document.activeElement.id);
+  });
+
+  a.$('lg_venue').value = 'Juans Place'; a.fire(a.$('lg_venue'), 'input'); await a.settle();
+  a.$('lg_what').focus(); await a.settle();
+  check('an unknown place opens its fields while the item is typed', () => {
+    if(a.$('lg_new').style.display === 'none') throw new Error('fields still hidden');
+    if(a.w.document.activeElement.id !== 'lg_what') throw new Error('focus was stolen');
+  });
+
+  a.$('lg_what').value = 'lomo saltado';
+  a.$('lg_location').value = 'SF'; a.fire(a.$('lg_location'), 'input');
+  a.$('lg_category').value = 'Peruvian'; await a.settle();
+  a.state.calls.length = 0;
+  a.click(a.$('lg_newAdd')); await a.settle(400);
+  check('the order writes the place and the item together', () => {
+    const row = a.state.venues.find(r => r[0] === 'Juans Place');
+    if(!row) throw new Error('no venue row');
+    if(row[1] !== 'Peruvian' || row[2] !== 'SF') throw new Error('venue row: ' + JSON.stringify(row));
+    if(row[6] !== 'x') throw new Error('menu flag not set: ' + JSON.stringify(row));
+    if(!a.state.menu.some(r => r[0] === 'Juans Place' && r[4] === 'lomo saltado')) throw new Error('item not logged');
+  });
+  check('the new place is on the list behind the sheet', () => {
+    if(!a.w.eval("venues.some(v => v.name === 'Juans Place')")) throw new Error('not in the model');
+    if(!/Juans Place/.test(a.$('list').textContent)) throw new Error('not on screen');
+  });
+  a.$('lg_venue').value = 'Juans Place'; a.fire(a.$('lg_venue'), 'input'); await a.settle();
+  check('a second item goes to it without asking again', () => {
+    if(!/already on the list/.test(a.$('lg_hint').textContent)) throw new Error(a.$('lg_hint').textContent);
   });
 }
 

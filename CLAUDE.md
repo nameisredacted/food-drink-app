@@ -9,7 +9,7 @@ Single-file web app for a personal food/drink list. `index.html` is the whole ap
 |---|---|
 | App source | `index.html` (one file: markup, CSS, JS) |
 | Build stamp | `version.txt`, and `APP_VERSION` near the top of the script |
-| Repo on the Mac | `~/Desktop/Invisible Hand/Apps/eat + drink/food-drink-app` |
+| Repo on the Mac | `~/Desktop/Invisible Hand/WIP/eat + drink/food-drink-app` (worked on there 2026-09-19; `Apps/eat + drink` still exists — confirm which copy is the real one and delete the other) |
 | Live site | https://nameisredacted.github.io/food-drink-app/ (GitHub Pages, `main`) |
 | Workbook | OneDrive `the list/Food + Drink/Claude/Food + Drink.xlsx` |
 | Old workbooks | `…/Food + Drink/Claude/archive/` (per-region, `to eat.xlsx`, old dashboard) |
@@ -303,6 +303,63 @@ Remaining:
   one food truck.
 - The **Repair menu flags** and **Attach logged items** buttons should now report nothing.
   If either starts finding rows again, something upstream is writing names that do not match.
+
+## Write-through: a read that has not caught up (2026.09.19-1)
+
+Graph serves the **pre-write copy** of a table for a moment after a write. `loadAll()`
+straight after a write therefore rebuilt the list from the old table: a deleted place was
+still on it, and a place just entered was missing from it — which also meant its category
+was missing from the suggestions. The three reported faults were one fault.
+
+The fix is an intent overlay, not a longer wait:
+
+- `pendingAdds` / `pendingDeletes` hold what was just written. `applyPending()` runs inside
+  `loadAll()` — after the rows are mapped, before the indexes are built — and re-applies the
+  intent to whatever came back. An entry **clears itself** as soon as a read agrees, so a
+  stale entry cannot outlive the truth.
+- `loadUntil(test, tries)` re-reads (0ms, 300ms, 600ms) until the read reflects the write.
+  The overlay is what keeps the screen right if it never does.
+- A pending row carries **`index: null` and `pending: true`**. It can be found, listed and
+  logged against, but nothing may PATCH or DELETE against it — a guessed index writes to
+  whatever row happens to sit there. `resolveVenue()` waits for the real index and throws
+  `pendingError` rather than returning a pending row, and every repair/bulk pass selects
+  from **`liveVenues()`** (`markChains`, `unmarkedChainRows`, `chainUmbrellaRows`,
+  `duplicateGroups`, `strayLogRows`, `findDataIssues`).
+- Nothing is invented: an entry only ever hides a row that was deleted or shows a row that
+  was written.
+
+`tests/smoke.mjs` models the lag — `app({ stale: n })` serves the pre-write snapshot for the
+next `n` venue reads. The new checks run at `stale: 20`, so the read never catches up inside
+the retry window and only the overlay can keep the list honest.
+
+## Categories typed for the first time (2026.09.19-1)
+
+Suggestions were derived from the sheet alone, so a brand-new cuisine was not offered until
+the read caught up, and was gone for good if its one row was deleted. `rememberCategory()`
+now keeps every category typed (`saveForm`, the order path) in `localStorage` under
+`eatdrink.categories`, and `categoryOptions()` returns the sheet's own first, most used
+first, then anything typed that no row carries.
+
+The sheet stays the record — this is only a list of what has been typed, and it is
+**per browser**, so a category typed on the phone is not offered on the laptop until a row
+carries it. A workbook-backed list (its own sheet + table, added through Graph, never
+openpyxl) is the fix if that starts to bite.
+
+The **filter dropdown is deliberately left out of this**: it filters rows, so an entry no
+row carries would only ever return nothing.
+
+## Straight to an order (2026.09.19-1)
+
+`log an order` sits in the chip row beside `pick one`: one tap opens the ordered sheet with
+the cursor in *where*. Type the place and the item and nothing else is needed. A name the
+list does not have is not a dead end — the location/cuisine fields now open **as the item is
+being typed** (focus on `lg_what`, `showNewPlace(name, keepFocus)`), and confirming writes
+the venue row and the log row together, marks `Has Menu Detail`, and leaves the place on the
+list behind the sheet.
+
+`showJustEntered(name)` puts what was entered in the search box: the list shows nothing until
+something is being searched for, so a new place would otherwise land behind an empty screen
+and read as lost.
 
 ## Working on this across sessions
 
