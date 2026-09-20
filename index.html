@@ -404,7 +404,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.19-2";
+const APP_VERSION = "2026.09.20-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -657,6 +657,7 @@ function resolveMenuVenue(r){
   return null;
 }
 
+let lastLoadAt = 0, refreshing = false, booted = false;
 async function loadAll(){
   // load table rows (paged)
   let rows = [];
@@ -718,7 +719,42 @@ async function loadAll(){
     menuRows = []; menus = {}; orphanMenuRows = [];
     window.__menuLoadError = e.message;
   }
+  lastLoadAt = Date.now();
 }
+
+/* ====== Coming back to an app that was left open ======
+   loadAll() runs at start-up and after this device's own writes, so a page that
+   just sits in the background - a phone in the app switcher, a desktop tab left
+   open for days - keeps showing the rows it read hours ago, and an edit made on
+   the other device is nowhere to be seen. Re-read whenever the page comes back
+   to the foreground.
+
+   Never while a sheet is open: a sheet holds the row it was opened with, and
+   pulling the data out from under it would leave a form editing a row that no
+   longer matches. Never before the first load has finished either, and failures
+   stay silent - offline or an expired token should leave what is on screen
+   alone rather than blanking the list. */
+const REFRESH_AFTER_MS = 20000;
+async function refreshIfStale(){
+  if(!booted || refreshing || document.hidden) return;
+  if(document.querySelector('.sheet.open')) return;
+  if(Date.now() - lastLoadAt < REFRESH_AFTER_MS) return;
+  refreshing = true;
+  const y = window.scrollY;
+  try{
+    await loadAll();
+    populateCategories();
+    render();
+    window.scrollTo(0, y);
+  }catch(e){
+    console.warn('refresh on return failed', e);
+  }finally{
+    refreshing = false;
+  }
+}
+document.addEventListener('visibilitychange', refreshIfStale);
+window.addEventListener('pageshow', refreshIfStale);
+window.addEventListener('focus', refreshIfStale);
 
 /* ====== UI ====== */
 let state = { query:'', category:'', ratings:new Set(), shown:60, near:null };
@@ -2192,6 +2228,7 @@ async function init(){
     document.getElementById('gate').style.display = 'none';
     document.getElementById('appHeader').style.display = '';
     document.getElementById('addBtn').style.display = '';
+    booted = true;
   }catch(e){
     console.error(e);
     showGateError('Could not load your file: ' + e.message);

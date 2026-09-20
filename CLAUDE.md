@@ -101,6 +101,15 @@ Auth: MSAL (`MSAL_CLIENT_ID`), Graph Excel table API, redirect URI is the Pages 
 - Sheets are dismissed with the `×`; panels have no cancel buttons.
 - The **closed label is not a list decoration** — it renders wherever a place's name is
   shown (list, detail heading, ordered-page title, global-log heading) through `closedTag(v)`.
+- **The page re-reads when it comes back to the foreground** (2026.09.20-1). `loadAll()`
+  otherwise runs only at start-up and after this device's own writes, so a phone left in
+  the app switcher or a desktop tab left open keeps showing rows read hours ago and never
+  sees the other device's edits. `refreshIfStale()` fires on `visibilitychange`, `pageshow`
+  and `focus`, and re-reads when the last load is more than 20s old. It skips while any
+  `.sheet.open` is up — a sheet holds the row it was opened with — and swallows failures,
+  since offline or an expired token should leave what is on screen alone.
+  Note for tests: jsdom reports an unrendered document as `hidden`, so the smoke suite
+  defines `visibilityState`/`hidden` before dispatching.
 - The **primary search bar has no dropdown** (removed 2026.09.07-1). The list below it
   already filters live and shows the whole result set; the box only ever showed a top-8
   slice of the same thing. Enter dismisses the keyboard, Escape clears the box. The

@@ -558,6 +558,52 @@ const check = (name, fn) => {
   });
 }
 
+/* ---------- coming back to an app that was left open ---------- */
+{
+  const a = app({ venues: [
+    ['Zuni Cafe','American','San Francisco, CA','','y','','','','','','','',''],
+  ], menu: [] });
+  await a.settle(400);
+  // jsdom reports a document that is never rendered as hidden; the whole point
+  // of this behaviour is a page that has just come to the foreground
+  Object.defineProperty(a.w.document, 'visibilityState', { get: () => 'visible', configurable: true });
+  Object.defineProperty(a.w.document, 'hidden', { get: () => false, configurable: true });
+
+  check('a fresh page does not re-read', () => {
+    a.state.calls.length = 0;
+    a.w.eval("document.dispatchEvent(new Event('visibilitychange'))");
+    if(a.state.calls.length) throw new Error('re-read straight after loading');
+  });
+
+  // the other device adds a place while this one sits in the background
+  a.state.venues.push(['Nopa','American','San Francisco, CA','','','','','','','','','','']);
+  a.w.eval('lastLoadAt = 0');
+  a.w.eval("document.dispatchEvent(new Event('visibilitychange'))");
+  await a.settle(400);
+  check('coming back re-reads the sheet and shows the other device\'s edit', () => {
+    if(!a.w.eval("venues.some(v => v.name === 'Nopa')")) throw new Error('not in the model');
+    a.w.eval("state.query = 'nopa'; render();");
+    if(!/Nopa/.test(a.$('list').textContent)) throw new Error('not on screen');
+  });
+
+  check('a refresh never runs while a sheet is open', () => {
+    a.w.eval("state.query = ''; render(); openDetail(venues.find(v => v.name === 'Zuni Cafe'))");
+    a.state.venues.push(['Delfina','Italian','San Francisco, CA','','','','','','','','','','']);
+    a.w.eval('lastLoadAt = 0');
+    a.state.calls.length = 0;
+    a.w.eval("document.dispatchEvent(new Event('visibilitychange'))");
+    if(a.state.calls.length) throw new Error('re-read out from under an open sheet');
+  });
+
+  a.w.eval('closeDetail()');
+  a.w.eval('lastLoadAt = 0');
+  a.w.eval("document.dispatchEvent(new Event('visibilitychange'))");
+  await a.settle(400);
+  check('the deferred edit arrives after the sheet closes', () => {
+    if(!a.w.eval("venues.some(v => v.name === 'Delfina')")) throw new Error('never picked it up');
+  });
+}
+
 console.log(results.join('\n'));
 console.log(failures ? `\n${failures} failing` : `\nall ${results.length} checks passed`);
 process.exit(failures ? 1 : 0);
