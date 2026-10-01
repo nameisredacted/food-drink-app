@@ -419,6 +419,16 @@ airports are skipped. `PRECISE_GEO = ['exact','verified']` carry no asterisk; `n
 `zip`, `city` and borrowed centroids do. `name` rows are not looked up again
 (the old code also re-geocoded `verified` rows and would have downgraded them).
 
+### Where "nearest" measures from (2026.10.01-2)
+
+On the Mac the browser kept reporting home (Presidio Heights) when the user was
+elsewhere. Nothing in the app carries a location; the position is whatever the browser
+hands back. So: both `getCurrentPosition` calls use `maximumAge: 0` (no cached fix);
+`#nearWhere` shows *your browser puts you near <neighbourhood, town> (within N ft)*,
+named by a Nominatim reverse lookup; and **not here?** opens `#nearInput`, where a typed
+street, neighbourhood or town (Nominatim search) replaces the browser's position
+(`manual: true`, shown as *from <place>*). A denial or failure opens the box too.
+
 ### Bulk geocode (2026-10-01)
 
 The code fix alone did not fix the list: from Presidio Heights the top 40 "nearest" were

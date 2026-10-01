@@ -692,6 +692,39 @@ const check = (name, fn) => {
   });
 }
 
+/* ---------- nearest: where the app thinks you are ---------- */
+{
+  const row = (name, loc, lat, lng) => [name, 'Food', loc, '', '', '', '', '', lat, lng, 'exact', '', ''];
+  const a = app({
+    venues: [ row('Spoonbar', 'Healdsburg, CA', '38.6110', '-122.8700'),
+              row('Zuni Cafe', 'San Francisco, CA', '37.7735', '-122.4222') ],
+    geocode: q => /healdsburg/i.test(q) ? { lat: '38.6102', lon: '-122.8694', display_name: 'Healdsburg, Sonoma County, California' } : null,
+    fix: { lat: 37.7880, lng: -122.4530 },     // the browser insists on home
+  });
+  await a.settle(400);
+  a.click(a.$('nearChip')); await a.settle(100);
+  check('where: the line says where the browser put you', () => {
+    if(a.$('nearWhere').style.display === 'none') throw new Error('hidden');
+    if(!/your browser puts you near/.test(a.$('nearLabel').textContent)) throw new Error(a.$('nearLabel').textContent);
+  });
+  check('where: never asks for a cached position', () => {
+    if(a.state.fixOpts.some(o => o.maximumAge !== 0)) throw new Error(JSON.stringify(a.state.fixOpts));
+  });
+  a.click(a.$('nearFix'));
+  a.$('nearInput').value = 'healdsburg';
+  a.enter(a.$('nearInput')); await a.settle(200);
+  check('where: a typed place replaces the browser\'s and re-sorts', () => {
+    if(!/^from Healdsburg/.test(a.$('nearLabel').textContent)) throw new Error(a.$('nearLabel').textContent);
+    const first = a.$('list').querySelector('.item .item-name').textContent;
+    if(!/Spoonbar/.test(first)) throw new Error('first is ' + first);
+    if(a.$('nearSet').style.display !== 'none') throw new Error('box left open');
+  });
+  a.click(a.$('nearChip')); await a.settle(50);
+  check('where: turning nearest off hides the line', () => {
+    if(a.$('nearWhere').style.display !== 'none') throw new Error('still shown');
+  });
+}
+
 console.log(results.join('\n'));
 console.log(failures ? `\n${failures} failing` : `\nall ${results.length} checks passed`);
 process.exit(failures ? 1 : 0);

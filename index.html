@@ -138,6 +138,8 @@ select{background:#fff;border:none;color:var(--accent);padding:6px 2px;font-size
 .chip.near, .chip.dice{background:none;border:none;color:var(--accent);font-weight:400;}
 .chip.near.active, .chip.dice.active{color:#111;font-weight:700;}
 .count{color:#aaa;font-size:12px;}
+.nearfix{color:var(--accent);cursor:pointer;}
+#nearInput{width:100%;margin-top:4px;font-size:16px;}
 
 /* list: type does the work */
 main{padding:2px 16px 90px;}
@@ -286,6 +288,8 @@ select.on{color:#111;font-weight:700;}
   </div>
   <div class="count" id="resultCount"></div>
   <div class="count" id="geoNote" style="display:none;">* approximate — refines as you use it</div>
+  <div class="count" id="nearWhere" style="display:none;"><span id="nearLabel"></span> · <span class="nearfix" id="nearFix" role="button">not here?</span></div>
+  <div class="count" id="nearSet" style="display:none;"><input id="nearInput" placeholder="where are you? street, neighbourhood or town" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
 </header>
 
 <main id="list"></main>
@@ -404,7 +408,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.10.01-1";
+const APP_VERSION = "2026.10.01-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -906,6 +910,7 @@ function render(){
     list.innerHTML = '<div class="hint-empty">type to search, or pick a category</div>';
     document.getElementById('resultCount').textContent = '';
     document.getElementById('geoNote').style.display = 'none';
+    syncNearUI();
     return;
   }
   let filtered = venues.filter(matches);
@@ -916,6 +921,7 @@ function render(){
   list.innerHTML = '';
   const toShow = filtered.slice(0, state.shown);
   document.getElementById('resultCount').textContent = filtered.length + ' result' + (filtered.length===1?'':'s');
+  syncNearUI();
   const gn = document.getElementById('geoNote');
   gn.style.display = (state.near && filtered.slice(0,state.shown).some(isApproxGeo)) ? '' : 'none';
   toShow.forEach(v => {
@@ -965,30 +971,91 @@ document.querySelectorAll('.chip[data-rating]').forEach(chip => {
     render();
   });
 });
+/* Where "nearest" measures from. The browser's position is only as good as what
+   the computer can work out - on a Mac with Location Services off for the browser,
+   or with a stale fix, it can be miles out (it kept answering with home). So the
+   app says where it thinks you are, and "not here?" lets you type the place. */
+function syncNearUI(){
+  const on = !!state.near;
+  document.getElementById('nearWhere').style.display = on ? '' : 'none';
+  if(!on) document.getElementById('nearSet').style.display = 'none';
+  if(on) document.getElementById('nearLabel').textContent = nearDescription();
+}
+function nearDescription(){
+  const n = state.near;
+  if(!n) return '';
+  const where = n.label || (n.lat.toFixed(4) + ', ' + n.lng.toFixed(4));
+  if(n.manual) return 'from ' + where;
+  const acc = n.accuracy ? (n.accuracy < 1609 ? ' (within ' + Math.round(n.accuracy * 3.28084 / 50) * 50 + ' ft)'
+                                              : ' (within ' + (n.accuracy / 1609).toFixed(1) + ' mi)') : '';
+  return 'your browser puts you near ' + where + acc;
+}
+async function nameNear(){
+  const n = state.near;
+  if(!n || n.manual) return;
+  try{
+    const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&lat=' + n.lat + '&lon=' + n.lng);
+    if(!res.ok) return;
+    const j = await res.json(), a = (j && j.address) || {};
+    const label = [a.neighbourhood || a.suburb || a.quarter || a.road, a.city || a.town || a.village || a.hamlet]
+      .filter(Boolean).join(', ');
+    if(label && state.near === n){ n.label = label; syncNearUI(); }
+  }catch(e){ /* the coordinates still show */ }
+}
+function setNear(near){
+  state.near = near;
+  const chip = document.getElementById('nearChip');
+  chip.classList.add('active'); chip.textContent = 'nearest';
+  state.shown = 40; render();
+  nameNear();
+  refineNearby();
+}
 document.getElementById('nearChip').addEventListener('click', () => {
   const chip = document.getElementById('nearChip');
   if(state.near){ state.near=null; chip.classList.remove('active'); chip.textContent='nearest'; state.shown=60; render(); return; }
-  if(!navigator.geolocation){ alert('This browser has no location support.'); return; }
+  if(!navigator.geolocation){
+    document.getElementById('nearSet').style.display = '';
+    document.getElementById('nearInput').focus();
+    return;
+  }
   chip.textContent='locating…';
-  const got = pos => {
-    state.near = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-    chip.classList.add('active'); chip.textContent='nearest';
-    state.shown = 40; render();
-    refineNearby();
-  };
+  const got = pos => setNear({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
   const failed = err => {
     chip.textContent='nearest';
-    const why = err && err.code === 1
-      ? 'Location is turned off for this site.\n\nOn iPhone: Settings > Privacy & Security > Location Services > Safari Websites > While Using.'
-      : 'Could not get your location (' + ((err && err.message) || 'no fix') + ').';
-    alert(why);
+    alert((err && err.code === 1
+      ? 'Location is turned off for this site.'
+      : 'Could not get your location.') + ' Type where you are instead.');
+    document.getElementById('nearSet').style.display = '';
+    document.getElementById('nearInput').focus();
   };
-  // a precise fix often times out indoors; a coarse one is plenty to sort a list
+  // never a cached fix: a position from earlier is how "nearest" ends up at home
   navigator.geolocation.getCurrentPosition(got, err => {
     if(err && err.code === 1) return failed(err);
     navigator.geolocation.getCurrentPosition(got, failed,
-      { enableHighAccuracy:false, timeout:15000, maximumAge:300000 });
-  }, { enableHighAccuracy:true, timeout:8000, maximumAge:60000 });
+      { enableHighAccuracy:false, timeout:15000, maximumAge:0 });
+  }, { enableHighAccuracy:true, timeout:8000, maximumAge:0 });
+});
+document.getElementById('nearFix').addEventListener('click', () => {
+  const box = document.getElementById('nearSet');
+  box.style.display = box.style.display === 'none' ? '' : 'none';
+  if(box.style.display === '') document.getElementById('nearInput').focus();
+});
+document.getElementById('nearInput').addEventListener('keydown', async e => {
+  if(e.key === 'Escape'){ e.target.blur(); document.getElementById('nearSet').style.display = 'none'; return; }
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  const q = e.target.value.trim();
+  if(!q) return;
+  try{
+    const res = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&q=' + encodeURIComponent(q));
+    const j = res.ok ? await res.json() : [];
+    const hit = Array.isArray(j) && j[0];
+    if(!hit){ alert('Could not find ' + q + '.'); return; }
+    e.target.blur();
+    document.getElementById('nearSet').style.display = 'none';
+    setNear({ lat: +hit.lat, lng: +hit.lon, manual: true,
+      label: String(hit.display_name || q).split(',').slice(0, 2).join(',').trim() });
+  }catch(err){ alert('Could not look that place up.'); }
 });
 
 document.getElementById('diceChip').addEventListener('click', () => {
