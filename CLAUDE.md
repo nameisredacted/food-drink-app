@@ -419,6 +419,24 @@ airports are skipped. `PRECISE_GEO = ['exact','verified']` carry no asterisk; `n
 `zip`, `city` and borrowed centroids do. `name` rows are not looked up again
 (the old code also re-geocoded `verified` rows and would have downgraded them).
 
+### Bulk geocode (2026-10-01)
+
+The code fix alone did not fix the list: from Presidio Heights the top 40 "nearest" were
+all on one point (the 94118 ZIP centroid, 0.66 mi each, alphabetical), and 260 rows shared
+a single San Francisco point. 12 lookups per tap would take months. So every address not
+already `exact`/`verified` went through the **Census batch geocoder** in one request from
+the sandbox (server side, so CORS does not apply): 1707 sent, 1640 matched, 65 no match
+(mostly Ferry Building suites and SFO terminals), 2 ties. Written as `exact`.
+
+Written by patching only the Lat/Lng/Geo Precision `<c>` elements in
+`xl/worksheets/sheet1.xml` of the original zip, re-zipped in the original part order —
+**not** by saving through openpyxl, which rewrote every text cell as `inlineStr` and
+dropped `sharedStrings.xml`. Verified: 4920 cells changed, none outside those three
+columns, table ref unchanged. Backup: `archive/Food + Drink (pre-geocode 20261001).xlsx`.
+The workbook changed twice while this was being prepared (the app's refine had already
+written 21 rows), so the patch was re-run on the newest copy and written immediately;
+re-run against a fresh stage if it ever needs repeating, keyed by address, never by row.
+
 ## Working on this across sessions
 
 Chat threads are disposable; this file is not. The routine:
