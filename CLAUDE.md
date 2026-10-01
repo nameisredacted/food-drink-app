@@ -432,7 +432,7 @@ Written by patching only the Lat/Lng/Geo Precision `<c>` elements in
 `xl/worksheets/sheet1.xml` of the original zip, re-zipped in the original part order —
 **not** by saving through openpyxl, which rewrote every text cell as `inlineStr` and
 dropped `sharedStrings.xml`. Verified: 4920 cells changed, none outside those three
-columns, table ref unchanged. Backup: `archive/Food + Drink (pre-geocode 20261001).xlsx`.
+columns, table ref unchanged. Backups: `archive/Food + Drink (pre-geocode 20261001).xlsx` (the workbook as of the morning, before ten To Order/Notes edits made later that day - the geo columns there are the old ZIP/city values, usable to roll back by address) and `archive/Food + Drink (post-geocode 20261001).xlsx` (the state right after the patch).
 The workbook changed twice while this was being prepared (the app's refine had already
 written 21 rows), so the patch was re-run on the newest copy and written immediately;
 re-run against a fresh stage if it ever needs repeating, keyed by address, never by row.
@@ -474,12 +474,18 @@ Chat threads are disposable; this file is not. The routine:
    the session's authorized sources — do that and pushes can happen straight from the
    session instead. **Done on 2026-10-01**: adding the repo with push access, cloning it
    into the sandbox, and pushing from there works, no GitHub Desktop needed.
-8. **The Desktop folders can mount empty.** On 2026-10-01 both `WIP/eat + drink` and
-   `Apps/eat + drink/food-drink-app` listed as empty through the bridge (macOS had not
-   granted the Claude app access to Desktop), while the OneDrive folder read fine. When
-   that happens, work from a sandbox clone of the GitHub repo instead. The workbook in
-   OneDrive must be staged (`device_stage_files`) before openpyxl can open it — reading
-   it in place fails with *Resource deadlock avoided*.
+8. **An empty folder by the same name (2026-09-30).** A session connected
+   `WIP/eat + drink` and found it empty. It was not a permission problem: a new, empty
+   `eat + drink` had been created that afternoon, and the repo was sitting in
+   `WIP/eat + drink 2/food-drink-app`. An empty folder lists the same as a folder the
+   app cannot read, so check the parent's names (a names-only listing of `WIP` works
+   without a grant) before blaming permissions. Fixed by deleting the empty one and
+   renaming `eat + drink 2` back. `Apps/` now lives inside `WIP/` and holds only
+   Random Number Generator. The OneDrive workbook must be staged (`device_stage_files`)
+   before openpyxl can open it - reading it in place fails with *Resource deadlock
+   avoided*. And per item 5: a second commit to the same staged path delivered the first
+   file's bytes again on this date too (the archive backup), so give every write a new
+   filename.
 
 ## Testing
 
