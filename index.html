@@ -285,7 +285,7 @@ select.on{color:#111;font-weight:700;}
     <div class="chip dice" id="diceChip">pick one</div>
   </div>
   <div class="count" id="resultCount"></div>
-  <div class="count" id="geoNote" style="display:none;">* approximate (ZIP-level) — refines as you use it</div>
+  <div class="count" id="geoNote" style="display:none;">* approximate — refines as you use it</div>
 </header>
 
 <main id="list"></main>
@@ -404,7 +404,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.09.20-1";
+const APP_VERSION = "2026.10.01-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -671,6 +671,7 @@ async function loadAll(){
     mainWidth = Math.max(BASE_WIDTH, rows[0].values[0].length);
   venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
   applyPending();   // a delete or an add this read is too early to show
+  buildLocCentroids();
 
   // indexes used to attach menu rows to the right branch
   venuesByKey = new Map();
@@ -765,11 +766,39 @@ function haversine(a, b, c, d){
   const h = Math.sin(dLat/2)**2 + Math.cos(a*t)*Math.cos(c*t)*Math.sin(dLon/2)**2;
   return 2*R*Math.asin(Math.sqrt(h));
 }
+/* Geo Precision: 'exact' (street address) and 'verified' are trusted; 'name'
+   (matched by name in its town), 'zip' and 'city' are approximate. A row with no
+   coordinates at all - every place added through the app - borrows the centre of
+   the other rows filed under the same Location, so it still turns up in nearest. */
+const PRECISE_GEO = ['exact', 'verified'];
+let locCentroids = new Map();
+function ownCoords(v){
+  const la = parseFloat(v.lat), ln = parseFloat(v.lng);
+  return (isNaN(la) || isNaN(ln)) ? null : { lat: la, lng: ln };
+}
+function buildLocCentroids(){
+  const acc = new Map();
+  venues.forEach(v => {
+    const c = ownCoords(v), k = normTxt(v.location || '');
+    if(!c || !k) return;
+    const a = acc.get(k) || { lat: 0, lng: 0, n: 0 };
+    a.lat += c.lat; a.lng += c.lng; a.n++;
+    acc.set(k, a);
+  });
+  locCentroids = new Map();
+  acc.forEach((a, k) => locCentroids.set(k, { lat: a.lat / a.n, lng: a.lng / a.n }));
+}
+function coordsOf(v){
+  return ownCoords(v) || locCentroids.get(normTxt(v.location || '')) || null;
+}
+function isApproxGeo(v){
+  return !ownCoords(v) || PRECISE_GEO.indexOf(String(v.geo || '').trim()) < 0;
+}
 function distOf(v){
   if(!state.near) return null;
-  const la = parseFloat(v.lat), ln = parseFloat(v.lng);
-  if(isNaN(la) || isNaN(ln)) return null;
-  return haversine(state.near.lat, state.near.lng, la, ln);
+  const c = coordsOf(v);
+  if(!c) return null;
+  return haversine(state.near.lat, state.near.lng, c.lat, c.lng);
 }
 function fmtDist(d){
   if(d == null) return '';
@@ -888,7 +917,7 @@ function render(){
   const toShow = filtered.slice(0, state.shown);
   document.getElementById('resultCount').textContent = filtered.length + ' result' + (filtered.length===1?'':'s');
   const gn = document.getElementById('geoNote');
-  gn.style.display = (state.near && filtered.slice(0,state.shown).some(v => v.geo !== 'exact')) ? '' : 'none';
+  gn.style.display = (state.near && filtered.slice(0,state.shown).some(isApproxGeo)) ? '' : 'none';
   toShow.forEach(v => {
     const el = document.createElement('div');
     el.className = 'item' + (isClosed(v) ? ' closed' : '');
@@ -898,7 +927,7 @@ function render(){
         ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">\u2713</span>` : ''}
         ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
-      <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${state.near ? `<span class="dist">${fmtDist(distOf(v))}${v.geo!=='exact'?'*':''}</span>` : ''}</div>
+      <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${state.near ? `<span class="dist">${fmtDist(distOf(v))}${isApproxGeo(v)?'*':''}</span>` : ''}</div>
       ${v.toOrder ? `<div class="toorder"><span class="tolabel">To Order:</span> ${escapeHtml(String(v.toOrder).split(/[;,]/).map(x=>x.trim()).filter(Boolean).join(', '))}</div>` : ''}
     `;
     el.addEventListener('click', () => openDetail(v));
@@ -941,15 +970,25 @@ document.getElementById('nearChip').addEventListener('click', () => {
   if(state.near){ state.near=null; chip.classList.remove('active'); chip.textContent='nearest'; state.shown=60; render(); return; }
   if(!navigator.geolocation){ alert('This browser has no location support.'); return; }
   chip.textContent='locating…';
-  navigator.geolocation.getCurrentPosition(pos => {
+  const got = pos => {
     state.near = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     chip.classList.add('active'); chip.textContent='nearest';
     state.shown = 40; render();
     refineNearby();
-  }, err => {
+  };
+  const failed = err => {
     chip.textContent='nearest';
-    alert('Could not get your location: ' + err.message + '\n\nOn iPhone: Settings > Safari > Location.');
-  }, { enableHighAccuracy:true, timeout:10000, maximumAge:60000 });
+    const why = err && err.code === 1
+      ? 'Location is turned off for this site.\n\nOn iPhone: Settings > Privacy & Security > Location Services > Safari Websites > While Using.'
+      : 'Could not get your location (' + ((err && err.message) || 'no fix') + ').';
+    alert(why);
+  };
+  // a precise fix often times out indoors; a coarse one is plenty to sort a list
+  navigator.geolocation.getCurrentPosition(got, err => {
+    if(err && err.code === 1) return failed(err);
+    navigator.geolocation.getCurrentPosition(got, failed,
+      { enableHighAccuracy:false, timeout:15000, maximumAge:300000 });
+  }, { enableHighAccuracy:true, timeout:8000, maximumAge:60000 });
 });
 
 document.getElementById('diceChip').addEventListener('click', () => {
@@ -2144,38 +2183,68 @@ document.getElementById('saveMenuForm').addEventListener('click', async () => {
   });
 });
 
-/* Coordinates start as ZIP-code centroids. When you use "nearest", the app
-   quietly upgrades the closest venues to exact street positions via the free
-   US Census geocoder and stores them, so accuracy improves permanently. */
+/* Coordinates start as ZIP-code or city centroids, and places added through the
+   app start with none. When you use "nearest", the app quietly looks up the
+   closest approximate places and stores what it finds, so accuracy improves
+   permanently.
+
+   The lookup is OpenStreetMap's Nominatim. The US Census geocoder this used to
+   call sends no Access-Control-Allow-Origin header, so the browser refused every
+   request and nothing was ever refined. Nominatim allows browser calls but asks
+   for at most one request a second, hence the spacing.
+
+   - a row with an Address is looked up by address -> 'exact', but only when the
+     match is a street-level result;
+   - a row without one is looked up by name + Location -> 'name', accepted only
+     when OSM calls it a business and it sits within 25 miles of where the row
+     already places it. Chains are skipped: a name alone cannot say which branch. */
+const GEOCODE_URL = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&q=';
+const GEOCODE_GAP_MS = 1100;
+const BUSINESS_CLASSES = ['amenity','shop','tourism','leisure','building','craft','office'];
 let refining = false;
+async function geocodeOne(q){
+  const res = await fetch(GEOCODE_URL + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } });
+  if(!res.ok) throw new Error('http ' + res.status);
+  const j = await res.json();
+  return (Array.isArray(j) && j[0]) || null;
+}
 async function refineNearby(){
   if(refining || !state.near) return;
   refining = true;
   try{
     const todo = venues.filter(matches)
-      .filter(v => distOf(v) !== null && v.geo !== 'exact' && v.address && !/airport/i.test(v.address))
+      .filter(v => !v.pending && !isClosed(v) && distOf(v) !== null && isApproxGeo(v)
+        && String(v.geo || '').trim() !== 'name'
+        && !/airport/i.test(v.address || ''))
+      .filter(v => (v.address || '').trim()
+        || (v.location && !isChain(v) && !isPseudoLocation(v.location)))
       .sort((x,y) => distOf(x) - distOf(y))
-      .slice(0, 20);
+      .slice(0, 12);
     let changed = 0;
-    for(const v of todo){
+    for(let n = 0; n < todo.length; n++){
+      const v = todo[n];
+      if(n) await wait(GEOCODE_GAP_MS);
       let ll = null;
       try{
-        const url = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address='
-          + encodeURIComponent(v.address) + '&benchmark=Public_AR_Current&format=json';
-        const res = await fetch(url);
-        if(!res.ok) throw new Error('http ' + res.status);
-        const j = await res.json();
-        const m = j && j.result && j.result.addressMatches && j.result.addressMatches[0];
-        if(m) ll = { lat: +m.coordinates.y.toFixed(6), lng: +m.coordinates.x.toFixed(6) };
+        const byAddress = !!(v.address || '').trim();
+        const hit = await geocodeOne(byAddress ? v.address : v.name + ', ' + v.location);
+        if(hit){
+          const c = { lat: +(+hit.lat).toFixed(6), lng: +(+hit.lon).toFixed(6) };
+          const was = coordsOf(v);
+          const near = was && haversine(was.lat, was.lng, c.lat, c.lng) <= 25;
+          if(byAddress && (hit.place_rank || 0) >= 26) ll = Object.assign(c, { geo: 'exact' });
+          else if(!byAddress && near && BUSINESS_CLASSES.indexOf(hit.category) >= 0)
+            ll = Object.assign(c, { geo: 'name' });
+        }
       }catch(e){
-        console.warn('geocode unavailable, staying at ZIP precision', e);
-        break;   // network or CORS blocked - stop trying this round
+        console.warn('geocoder unavailable, staying approximate', e);
+        break;   // offline or refused - stop trying this round
       }
       if(!ll) continue;
       try{
         const cur = await resolveVenue(v);
-        if(!cur) continue;
-        const rec = Object.assign({}, cur, { lat: ll.lat, lng: ll.lng, geo: 'exact' });
+        if(!cur || isClosed(cur)) continue;
+        const rec = Object.assign({}, cur, { lat: ll.lat, lng: ll.lng, geo: ll.geo });
         delete rec.index;
         await graph('PATCH', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows/itemAt(index=${cur.index})`, { values: [objToRow(rec)] });
         changed++;

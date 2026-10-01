@@ -391,6 +391,34 @@ columns.
 
 Alerts are one plain sentence and end in a full stop — `Enter a name.`, `Enter an item.`
 
+## Nearest — what was broken and the fix (2026.10.01-1)
+
+Three faults, one symptom ("the location function is not working"):
+
+- **The refine step never ran.** `refineNearby()` called the US Census geocoder, which
+  sends no `Access-Control-Allow-Origin` header, so the browser refused every request and
+  the loop broke on the first one. In the workbook only 5 rows had ever reached `exact`;
+  1702 sat at `zip` and 328 at `city`. It now calls **OpenStreetMap Nominatim**
+  (`access-control-allow-origin: *`), one request every 1.1 s per their usage policy,
+  at most 12 per tap.
+- **Places added through the app never appeared.** `saveForm` / `addPlaceThenLog` write
+  no Address, Lat or Lng, and `distOf()` dropped any row without coordinates — 220 rows,
+  i.e. everything entered since the import. `coordsOf(v)` now falls back to the centroid
+  of the other rows filed under the same Location (`buildLocCentroids()`, rebuilt on every
+  `loadAll()`), never written to the workbook. That places 113 of the 220; the other 107
+  have no location (chains, by design) or a location no other row shares.
+- **A precise fix timed out indoors.** `enableHighAccuracy` with a 10 s timeout failed
+  with a bare alert. It now tries precise for 8 s, then a coarse fix (15 s, 5 min cache);
+  a permission denial (code 1) is not retried and says where the iPhone setting is.
+
+Refine rules: a row with an Address is looked up by address and stored as `exact` only on
+a street-level match (`place_rank >= 26`). A row without one is looked up by
+`name, Location` and stored as `name` only when OSM classes it as a business and it lands
+within 25 miles of where the row already sits. Chains, pseudo-locations, closed rows and
+airports are skipped. `PRECISE_GEO = ['exact','verified']` carry no asterisk; `name`,
+`zip`, `city` and borrowed centroids do. `name` rows are not looked up again
+(the old code also re-geocoded `verified` rows and would have downgraded them).
+
 ## Working on this across sessions
 
 Chat threads are disposable; this file is not. The routine:
@@ -426,7 +454,14 @@ Chat threads are disposable; this file is not. The routine:
    click it to the front once and it re-syncs. The cloud sandbox's git proxy
    refuses credentials for this repo unless `nameisredacted/food-drink-app` is added to
    the session's authorized sources — do that and pushes can happen straight from the
-   session instead.
+   session instead. **Done on 2026-10-01**: adding the repo with push access, cloning it
+   into the sandbox, and pushing from there works, no GitHub Desktop needed.
+8. **The Desktop folders can mount empty.** On 2026-10-01 both `WIP/eat + drink` and
+   `Apps/eat + drink/food-drink-app` listed as empty through the bridge (macOS had not
+   granted the Claude app access to Desktop), while the OneDrive folder read fine. When
+   that happens, work from a sandbox clone of the GitHub repo instead. The workbook in
+   OneDrive must be staged (`device_stage_files`) before openpyxl can open it — reading
+   it in place fails with *Resource deadlock avoided*.
 
 ## Testing
 

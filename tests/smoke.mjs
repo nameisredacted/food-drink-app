@@ -16,8 +16,11 @@ const VERSION = (/const APP_VERSION = "([^"]+)"/.exec(html) || [])[1] || 'test';
 /* `stale: n` models what Graph actually does: for the n reads after a write it
    still serves the pre-write copy of the table. That is what left a deleted
    place on the list and a place just entered missing from it. */
-function app({ venues = [], menu = [], stale = 0 } = {}){
-  const state = { venues: venues.map(r => r.slice()), menu: menu.map(r => r.slice()), calls: [] };
+/* `geocode(q)` answers the place lookup (null = no match); `fix` is what the
+   browser's geolocation returns - an array is tried in turn, a number is an
+   error code. Every lookup lands in state.geocoded. */
+function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = null } = {}){
+  const state = { venues: venues.map(r => r.slice()), menu: menu.map(r => r.slice()), calls: [], geocoded: [], fixOpts: [] };
   let snapV = state.venues.map(r => r.slice()), snapM = state.menu.map(r => r.slice()), lag = 0;
   const rows = v => ({ value: v.map((r, i) => ({ index: i, values: [r] })) });
   const dom = new JSDOM(html, {
@@ -32,6 +35,13 @@ function app({ venues = [], menu = [], stale = 0 } = {}){
       w.fetch = async (url, opts = {}) => {
         const u = String(url), m = (opts.method || 'GET').toUpperCase();
         if(u.includes('version.txt')) return { ok: true, status: 200, async text(){ return VERSION; } };
+        if(u.includes('census.gov')){ state.geocoded.push('census'); throw new TypeError('Failed to fetch'); }
+        if(u.includes('nominatim')){
+          const q = decodeURIComponent(u.split('&q=')[1] || '');
+          state.geocoded.push(q);
+          const hit = geocode(q);
+          return { ok: true, status: 200, async json(){ return hit ? [hit] : []; } };
+        }
         const isMenu = u.includes('MenuDetails');
         if(m !== 'GET'){
           if(stale && !lag){ snapV = state.venues.map(r => r.slice()); snapM = state.menu.map(r => r.slice()); }
@@ -54,7 +64,16 @@ function app({ venues = [], menu = [], stale = 0 } = {}){
         const body = isMenu ? rows(state.menu) : rows(state.venues);
         return { ok: true, status: 200, async json(){ return body; }, async text(){ return JSON.stringify(body); } };
       };
-      w.alert = () => {}; w.confirm = () => true; w.prompt = () => 'Other';
+      w.alert = m => { state.alerted = m; }; w.confirm = () => true; w.prompt = () => 'Other';
+      const fixes = Array.isArray(fix) ? fix.slice() : [fix];
+      Object.defineProperty(w.navigator, 'geolocation', { configurable: true, value: {
+        getCurrentPosition(ok, bad, opts){
+          state.fixOpts.push(opts);
+          const f = fixes.length > 1 ? fixes.shift() : fixes[0];
+          setTimeout(() => typeof f === 'number'
+            ? bad({ code: f, message: 'code ' + f })
+            : ok({ coords: { latitude: f.lat, longitude: f.lng } }), 0);
+        } } });
     }
   });
   const w = dom.window;
@@ -601,6 +620,75 @@ const check = (name, fn) => {
   await a.settle(400);
   check('the deferred edit arrives after the sheet closes', () => {
     if(!a.w.eval("venues.some(v => v.name === 'Delfina')")) throw new Error('never picked it up');
+  });
+}
+
+/* ---------- nearest ---------- */
+{
+  const row = (name, loc, addr, lat, lng, geo, chain = '', closed = '') =>
+    [name, 'Food', loc, '', '', '', '', addr, lat, lng, geo, chain, closed];
+  const a = app({
+    venues: [
+      row('Zuni Cafe',  'San Francisco, CA', '1658 Market St', '37.7735', '-122.4222', 'zip'),
+      row('Nopa',       'San Francisco, CA', '560 Divisadero St', '37.7749', '-122.4374', 'exact'),
+      row('Che Fico',   'San Francisco, CA', '', '', '', ''),                 // added through the app
+      row('Philz',      'San Francisco, CA', '', '', '', '', 'x'),            // a chain
+      row('Gone',       'San Francisco, CA', '', '', '', '', '', 'closed'),   // closed
+      row('Wild Crumb', 'Bozeman, MT', '', '', '', ''),                       // nothing to borrow from
+    ],
+    geocode: q => /1658 Market/.test(q) ? { lat: '37.7736', lon: '-122.4221', category: 'amenity', place_rank: 30 }
+               : /Che Fico/.test(q)    ? { lat: '37.7765', lon: '-122.4381', category: 'amenity', place_rank: 30 }
+               : null,
+    fix: [3, { lat: 37.7750, lng: -122.4370 }],   // precise fix times out, coarse one lands
+  });
+  await a.settle(400);
+  a.click(a.$('nearChip'));
+  await a.settle(100);
+
+  check('nearest: a timed-out precise fix falls back to a coarse one', () => {
+    if(a.state.fixOpts.length !== 2) throw new Error(a.state.fixOpts.length + ' attempts');
+    if(a.state.fixOpts[1].enableHighAccuracy !== false) throw new Error('second try still high accuracy');
+    if(!a.w.eval('!!state.near')) throw new Error('no position set');
+  });
+  check('nearest: a place with no coordinates still lists, marked approximate', () => {
+    const t = a.$('list').textContent;
+    if(!/Che Fico/.test(t)) throw new Error('missing: ' + t);
+    if(/Wild Crumb/.test(t)) throw new Error('listed a place with nothing to place it by');
+    const item = [...a.$('list').querySelectorAll('.item')].find(e => /Che Fico/.test(e.textContent));
+    if(!/\*/.test(item.querySelector('.dist').textContent)) throw new Error('no approximate mark');
+  });
+
+  await a.settle(4000);   // the lookups are spaced a second apart
+  check('refine: never calls the Census geocoder', () => {
+    if(a.state.geocoded.includes('census')) throw new Error('called census');
+  });
+  check('refine: by address when there is one, by name + town when not', () => {
+    if(!a.state.geocoded.includes('1658 Market St')) throw new Error(JSON.stringify(a.state.geocoded));
+    if(!a.state.geocoded.includes('Che Fico, San Francisco, CA')) throw new Error(JSON.stringify(a.state.geocoded));
+  });
+  check('refine: skips exact, chains, closed and placeless rows', () => {
+    const bad = a.state.geocoded.filter(q => /Divisadero|Philz|Gone|Wild Crumb/.test(q));
+    if(bad.length) throw new Error(bad.join('; '));
+  });
+  check('refine: coordinates and precision are written back', () => {
+    const z = a.state.venues.find(r => r[0] === 'Zuni Cafe');
+    const c = a.state.venues.find(r => r[0] === 'Che Fico');
+    if(z[8] !== 37.7736 || z[10] !== 'exact') throw new Error('Zuni ' + z.slice(8, 11));
+    if(c[8] !== 37.7765 || c[10] !== 'name') throw new Error('Che Fico ' + c.slice(8, 11));
+  });
+  check('refine: a refined exact place loses its mark', () => {
+    const item = [...a.$('list').querySelectorAll('.item')].find(e => /Zuni/.test(e.textContent));
+    if(/\*/.test(item.querySelector('.dist').textContent)) throw new Error('still marked');
+  });
+}
+{
+  const a = app({ venues: [['Zuni Cafe','American','SF','','','','','','37.77','-122.42','exact','','']], fix: 1 });
+  await a.settle(400);
+  a.click(a.$('nearChip')); await a.settle(100);
+  check('nearest: permission denied says so, does not retry', () => {
+    if(a.state.fixOpts.length !== 1) throw new Error('retried after a denial');
+    if(!/turned off/.test(a.state.alerted || '')) throw new Error(a.state.alerted);
+    if(a.$('nearChip').textContent !== 'nearest') throw new Error('chip stuck on ' + a.$('nearChip').textContent);
   });
 }
 
