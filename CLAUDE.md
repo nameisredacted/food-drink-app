@@ -514,3 +514,10 @@ and their 5 Menu Details rows were removed from `Food + Drink.xlsx` — table no
 1086 logged items. Backup: `archive/Food + Drink (pre-move-out 20261020).xlsx`. Removed by
 deleting `<row>` elements in the zip and renumbering, with table refs, `dimension` and the
 shared-string count updated; every other row verified identical to the original.
+
+2026-10-19: a second pass moved the 6 **San Luis Obispo, CA** rows (Ox & Anchor, Feral Kitchen +
+Lounge, The Palm Theater, Silver Bar & Cocktail Lounge, Black Sheep Bar & Grill, Sidecar) and their
+10 Menu Details rows out — table now 2253 venues, 1077 logged items. The first pass had matched a
+city list frozen at the 10-13 check, so cities added after it slipped through; classify every
+Location against the nine-county line on any future sweep. Backup:
+`archive/Food + Drink (pre-move-out SLO 20261019).xlsx`.
