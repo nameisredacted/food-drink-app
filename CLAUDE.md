@@ -502,3 +502,15 @@ Chat threads are disposable; this file is not. The routine:
 `node tests/smoke.mjs` (needs `npm i jsdom`). It loads `index.html` in jsdom with MSAL and
 Graph stubbed, drives the real handlers, and asserts on the rows the app would have written.
 No network, no OneDrive, nothing touches the live workbook.
+
+## Out-of-town places live elsewhere (2026-10-20)
+
+Hometown is the nine Bay Area counties (Alameda, Contra Costa, Marin, Napa, San Francisco,
+San Mateo, Santa Clara, Solano, Sonoma). Places outside that line belong to the separate
+**out of town** app (`../out-of-town`, workbook `Out of Town.xlsx` beside this one), not here.
+On 2026-10-20 the 28 rows outside that line (24 with an out-of-town Location, plus All'antico
+Vinaio, Broken Shaker, Croft Alley and Erewhon, whose notes named only non-Bay-Area cities)
+and their 5 Menu Details rows were removed from `Food + Drink.xlsx` — table now 2259 venues,
+1086 logged items. Backup: `archive/Food + Drink (pre-move-out 20261020).xlsx`. Removed by
+deleting `<row>` elements in the zip and renumbering, with table refs, `dimension` and the
+shared-string count updated; every other row verified identical to the original.
