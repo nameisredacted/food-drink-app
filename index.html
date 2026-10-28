@@ -37,9 +37,9 @@
   .item-sub{font-size:13px;color:var(--muted);margin-top:3px;}
   .toorder{margin-top:5px;font-size:12px;color:var(--text);}
   .tolabel{color:var(--muted);}
-  /* an item already ordered somewhere: struck, the way a line is crossed off in Notes */
-  .hadx{text-decoration:line-through;text-decoration-thickness:1px;color:var(--muted);}
-  .had{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
+  /* an item already ordered somewhere: struck, the way a line is crossed off in Notes - a 1px
+     line, nothing else changes; where it was had is the hover title */
+  .hadx{text-decoration:line-through;text-decoration-thickness:1px;}
   .more{display:block;width:100%;padding:12px;text-align:center;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
   .fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a1208;font-size:28px;display:flex;align-items:center;justify-content:center;border:none;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:20;}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:none;}
@@ -413,7 +413,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.10.28-1";
+const APP_VERSION = "2026.10.28-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -907,11 +907,12 @@ function alreadyOrdered(item, v){
 function wantCell(item, v){
   const where = alreadyOrdered(item, v);
   return where
-    ? '<span><span class="hadx">' + escapeHtml(item) + '</span><span class="had">already ordered ' + escapeHtml(where) + '</span></span>'
+    ? '<span class="hadx" title="already ordered ' + escapeHtml(where) + '">' + escapeHtml(item) + '</span>'
     : '<span>' + escapeHtml(item) + '</span>';
 }
 function wantHtmlFor(item, v){
-  return alreadyOrdered(item, v) ? '<span class="hadx">' + escapeHtml(item) + '</span>' : escapeHtml(item);
+  const where = alreadyOrdered(item, v);
+  return where ? '<span class="hadx" title="already ordered ' + escapeHtml(where) + '">' + escapeHtml(item) + '</span>' : escapeHtml(item);
 }
 function ratingBadgeClass(r){
   r = (r||'').trim();

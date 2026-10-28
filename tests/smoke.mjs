@@ -746,7 +746,7 @@ const check = (name, fn) => {
   const detail = name => { a.w.eval('openDetail(venues.find(v => v.name === ' + JSON.stringify(name) + '))'); return a.$('detailContent'); };
   const rows = c => Array.from(c.querySelectorAll('.wantrow')).map(r => ({
     text: r.querySelector('span').textContent, struck: !!r.querySelector('.hadx'),
-    had: (r.querySelector('.had') || { textContent: '' }).textContent }));
+    had: (r.querySelector('.hadx') || { title: '' }).title }));
   const nopa = rows(detail('Nopa'));
   check('ordered: a plural of a dish had elsewhere is struck, with where', () => {
     const r = nopa.find(x => /Roast Chickens/.test(x.text));

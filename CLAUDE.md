@@ -526,8 +526,9 @@ Location against the nine-county line on any future sweep. Backup:
 
 **Already ordered.** The user's rule: To Order is for unique dishes, not the same item in a
 second place. An item on any To Order that the Menu Details log shows was already ordered — at
-this place or any other — is **struck through** (list line and detail sheet) with *already ordered
-at X* / *here* underneath. Nothing is removed or written. Identity is the item text through
+this place or any other — is **struck through** (list line and detail sheet), a 1px line and
+nothing else, as in Notes and the travel app (2026.10.28-2 dropped -1's grey and caption line);
+*already ordered at X* / *here* is the hover title. Nothing is removed or written. Identity is the item text through
 `itemKey()`: case, accents, punctuation, a plural `s` and a count (`6 kumamotos` = `kumamoto x6`)
 are ignored, nothing else — so **a regional or otherwise labelled item is its own thing** (user,
 2026-10-28: `Kumamoto, Humboldt Bay` never matches a plain `kumamoto`). No product table, no
