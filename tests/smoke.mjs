@@ -56,6 +56,12 @@ function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = nu
           if(stale) lag = stale;
           return { ok: true, status: 201, async json(){ return {}; }, async text(){ return ''; } };
         }
+        // one row read back by index (the lookup checks a row before writing it)
+        const gIdx = (/itemAt\(index=(\d+)\)/.exec(u) || [])[1];
+        if(gIdx !== undefined && !isMenu){
+          const r = state.venues[+gIdx];
+          return { ok: true, status: 200, async json(){ return r ? { index: +gIdx, values: [r] } : null; } };
+        }
         if(lag > 0){
           const old = isMenu ? rows(snapM) : rows(snapV);
           if(!isMenu) lag--;      // one venue read consumed
@@ -722,6 +728,124 @@ const check = (name, fn) => {
   a.click(a.$('nearChip')); await a.settle(50);
   check('where: turning nearest off hides the line', () => {
     if(a.$('nearWhere').style.display !== 'none') throw new Error('still shown');
+  });
+}
+
+
+/* ---------- already ordered: struck on To Order, wherever it was had ---------- */
+{
+  const a = app({
+    venues: [
+      ['Zuni Cafe','American','SF','roast chicken; caesar','','','x','','','','','',''],
+      ['Nopa','American','SF','Roast Chickens; Kumamoto, Humboldt Bay; 6 kumamotos; pork chop','','','','','','','','',''],
+      ['Hog Island Oyster Co.','Seafood','SF','','','','x','','','','','',''],
+    ],
+    menu: [['Zuni Cafe','SF','','Mains','roast chicken'], ['Hog Island Oyster Co.','SF','','Raw Bar','kumamoto x6']],
+  });
+  await a.settle(400);
+  const detail = name => { a.w.eval('openDetail(venues.find(v => v.name === ' + JSON.stringify(name) + '))'); return a.$('detailContent'); };
+  const rows = c => Array.from(c.querySelectorAll('.wantrow')).map(r => ({
+    text: r.querySelector('span').textContent, struck: !!r.querySelector('.hadx'),
+    had: (r.querySelector('.had') || { textContent: '' }).textContent }));
+  const nopa = rows(detail('Nopa'));
+  check('ordered: a plural of a dish had elsewhere is struck, with where', () => {
+    const r = nopa.find(x => /Roast Chickens/.test(x.text));
+    if(!r.struck || r.had !== 'already ordered at Zuni Cafe') throw new Error(JSON.stringify(r));
+  });
+  check('ordered: a count and a plural still match ("6 kumamotos" = "kumamoto x6")', () => {
+    const r = nopa.find(x => /6 kumamotos/.test(x.text));
+    if(!r.struck || !/Hog Island/.test(r.had)) throw new Error(JSON.stringify(r));
+  });
+  check('ordered: a labelled / regional item is its own thing', () => {
+    const r = nopa.find(x => /Humboldt/.test(x.text));
+    if(r.struck) throw new Error('Kumamoto, Humboldt Bay was struck');
+  });
+  check('ordered: nothing struck that was never ordered', () => {
+    if(nopa.find(x => /pork chop/.test(x.text)).struck) throw new Error('pork chop struck');
+  });
+  check('ordered: had at this same place reads "here"', () => {
+    const r = rows(detail('Zuni Cafe')).find(x => /roast chicken/.test(x.text));
+    if(r.had !== 'already ordered here') throw new Error(r.had);
+  });
+  a.w.eval('closeDetail()');
+  a.$('searchBox').value = 'nopa'; a.fire(a.$('searchBox'), 'input');
+  check('ordered: the list line strikes it too', () => {
+    const line = a.$('list').querySelector('.toorder');
+    const struck = Array.from(line.querySelectorAll('.hadx')).map(x => x.textContent);
+    if(struck.join('|') !== 'Roast Chickens|6 kumamotos') throw new Error(struck.join('|'));
+  });
+  check('ordered: nothing was written', () => {
+    if(a.state.calls.length) throw new Error(a.state.calls.length + ' writes');
+  });
+}
+
+/* ---------- data check: addresses and "restaurant" categories ---------- */
+{
+  const osm = (name, extra) => Object.assign({ name, lat: '37.7733', lon: '-122.4390', category: 'amenity', type: 'restaurant',
+    place_rank: 30, address: { house_number: '306', road: 'Broderick Street', city: 'San Francisco', 'ISO3166-2-lvl4': 'US-CA', postcode: '94117' } }, extra);
+  const a = app({
+    venues: [
+      ['Nopalito','Restaurant','San Francisco, CA','','','','','','37.77','-122.44','zip','',''],
+      ['Lers Ros','Thai','San Francisco, CA','','','','','','','','','',''],
+      ['Mystery Spot','Thai','San Francisco, CA','','','','','','','','','',''],
+      ['Ghost Kitchen','Restaurants','San Francisco, CA','','','','','12 Main St','37.77','-122.44','exact','',''],
+      ['In-N-Out','Restaurant','','','','','','','','','','x',''],
+      ['Rose Street Diner','Diner','San Francisco, CA','','','','','','','','','',''],
+      ['Mexican Place','Mexican','San Francisco, CA','','','','','1 A St','37.77','-122.44','exact','',''],
+    ],
+    geocode: q => /^Nopalito/.test(q) ? osm('Nopalito', { extratags: { cuisine: 'mexican' } })
+               : /^Lers Ros/.test(q) ? osm('Lers Ros Thai')
+               : /^Rose Street Diner/.test(q) ? Object.assign(osm('Rose Street'), { category: 'highway', type: 'residential' })
+               : /^Ghost Kitchen/.test(q) ? osm('Some Other Place', { extratags: { cuisine: 'pizza' } })
+               : null,
+  });
+  await a.settle(400);
+  a.w.eval('openDiag()');
+  check('data check: lists places with no address, and generic categories', () => {
+    const t = a.$('diagBody').textContent;
+    if(!/No address\s*4/.test(t)) throw new Error(t);
+    if(!/Category says only "restaurant"\s*3/.test(t)) throw new Error(t);
+    if(!/Look up 5 places/.test(a.$('diagLookup').textContent)) throw new Error(a.$('diagLookup').textContent);
+  });
+  a.click(a.$('diagLookup')); await a.settle(9000);
+  const row = n => a.state.venues.find(r => r[0] === n);
+  check('lookup: address, point and cuisine written for a found place', () => {
+    const r = row('Nopalito');
+    if(r[7] !== '306 Broderick Street, San Francisco, CA 94117') throw new Error(r[7]);
+    if(r[8] !== 37.7733 || r[10] !== 'name') throw new Error(r.slice(8, 11).join(','));
+    if(r[1] !== 'Mexican') throw new Error('category ' + r[1]);
+  });
+  check('lookup: a found place keeps its real category', () => {
+    const r = row('Lers Ros');
+    if(r[1] !== 'Thai' || !r[7]) throw new Error(r.join('|'));
+  });
+  check('lookup: a street that shares the name is not taken', () => {
+    if(row('Rose Street Diner')[7]) throw new Error('took the street');
+  });
+  check('lookup: a different business at the result is not taken; its generic category is cleared', () => {
+    const r = row('Ghost Kitchen');
+    if(r[1] !== '' || r[7] !== '12 Main St') throw new Error(r.join('|'));
+  });
+  check('lookup: a chain is never looked up, but "restaurant" is cleared from it', () => {
+    if(a.state.geocoded.some(q => /In-N-Out/.test(q))) throw new Error('chain looked up');
+    if(row('In-N-Out')[1] !== '') throw new Error(row('In-N-Out')[1]);
+  });
+  check('lookup: rows with an address and a real category are left alone', () => {
+    if(a.state.geocoded.some(q => /Mexican Place/.test(q))) throw new Error('looked up');
+  });
+  check('lookup: what was not found is listed and not asked again', () => {
+    const t = a.$('diagBody').textContent;
+    if(!/not found online — type them in Edit: .*Mystery Spot/.test(t)) throw new Error(t);
+    if(!/Nothing to look up/.test(a.$('diagLookup').textContent)) throw new Error(a.$('diagLookup').textContent);
+  });
+  check('form: a typed address replaces the point, so nearest looks it up', () => {
+    a.w.eval('closeDiag(); openForm(venues.find(v => v.name === "Mystery Spot"))');
+    a.$('f_address').value = '1 Market St, San Francisco, CA';
+  });
+  a.click(a.$('saveForm')); await a.settle(300);
+  check('form: the address is saved', () => {
+    const r = row('Mystery Spot');
+    if(r[7] !== '1 Market St, San Francisco, CA' || r[8] !== '' || r[10] !== '') throw new Error(r.join('|'));
   });
 }
 

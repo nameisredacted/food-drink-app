@@ -37,6 +37,9 @@
   .item-sub{font-size:13px;color:var(--muted);margin-top:3px;}
   .toorder{margin-top:5px;font-size:12px;color:var(--text);}
   .tolabel{color:var(--muted);}
+  /* an item already ordered somewhere: struck, the way a line is crossed off in Notes */
+  .hadx{text-decoration:line-through;text-decoration-thickness:1px;color:var(--muted);}
+  .had{display:block;font-size:11px;color:var(--muted);margin-top:2px;}
   .more{display:block;width:100%;padding:12px;text-align:center;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
   .fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a1208;font-size:28px;display:flex;align-items:center;justify-content:center;border:none;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:20;}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:none;}
@@ -332,6 +335,7 @@ select.on{color:#111;font-weight:700;}
     <button class="btn ghost" id="diagMergeDupes">Merge duplicates</button>
     <button class="btn ghost" id="diagFixUmbrellas">Fix chain rows</button>
     <button class="btn ghost" id="diagAttachStrays">Attach logged items</button>
+    <button class="btn ghost" id="diagLookup">Look up addresses</button>
   </div>
 </div>
 
@@ -379,6 +383,7 @@ select.on{color:#111;font-weight:700;}
     <div class="ac-wrap"><input id="f_location" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="start typing, or tap one below"></div>
     <div class="quick" id="f_location_quick"></div>
   </div>
+  <div class="field"><label>Address</label><input id="f_address" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="street, town"></div>
   <div class="field"><label>Rating</label>
     <select id="f_rating"><option value=""></option><option value="-">-</option><option value="y">y (good)</option><option value="n">n (no)</option></select>
   </div>
@@ -408,7 +413,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.10.01-2";
+const APP_VERSION = "2026.10.28-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -719,9 +724,10 @@ async function loadAll(){
       if(!menus[r.vkey][sec]) menus[r.vkey][sec] = [];
       if(r.item) menus[r.vkey][sec].push(r.item);
     });
+    buildOrderedIndex();
   }catch(e){
     console.warn('menu load failed', e);
-    menuRows = []; menus = {}; orphanMenuRows = [];
+    menuRows = []; menus = {}; orphanMenuRows = []; orderedAt = new Map();
     window.__menuLoadError = e.message;
   }
   lastLoadAt = Date.now();
@@ -843,6 +849,70 @@ function hasMenu(v){
   const m = menus[vKey(v)];
   return !!(m && Object.keys(m).length);
 }
+
+/* ====== ALREADY ORDERED ======
+   The point of To Order is something new, not the same thing in a second place.
+   An item on a place's To Order that the log shows was already ordered - here or
+   anywhere else - is struck through, with where it was had underneath. Nothing is
+   removed. Identity is the item's own text, loosened only for case, accents,
+   punctuation, a plural s and a count ("6 kumamotos", "kumamoto x6"), so a
+   labelled or regional item ("Kumamoto, Humboldt Bay", "Hog Island Sweetwater")
+   only ever matches the same label: it is its own thing. */
+let orderedAt = new Map();   // itemKey -> [venue rows it was ordered at]
+function itemKey(s){
+  return normTxt(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/^\d+\s+(x\s+)?/, '')                                // 6 kumamotos, 2 x tacos
+    .replace(/\s*(\bx\s*\d+|\(\s*\d+\s*\)|\b\d+\s*(pc|pcs|piece|pieces))$/, '')   // kumamoto x6, (6)
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ').trim()
+    .split(' ').map(w => w.length > 3 && /[^s]s$/.test(w) ? w.slice(0, -1) : w).join(' ');
+}
+/* To Order items are separated by "; ". Older rows used commas, so a value with no
+   semicolon at all still splits on commas - but once a semicolon is there, a comma
+   belongs to the item ("Kumamoto, Humboldt Bay" stays one item). */
+function splitItems(s){
+  s = String(s || '');
+  return s.split(s.indexOf(';') >= 0 ? ';' : ',').map(x => x.trim()).filter(Boolean);
+}
+function buildOrderedIndex(){
+  orderedAt = new Map();
+  menuRows.forEach(r => {
+    if(!r.vkey || !r.item) return;
+    const k = itemKey(r.item);
+    if(!k) return;
+    const at = orderedAt.get(k) || orderedAt.set(k, []).get(k);
+    if(at.indexOf(r.vkey) < 0) at.push(r.vkey);
+  });
+}
+/* where an item was already ordered, as words: "here", "at Zuni Cafe",
+   "here and at Nopa", "at Zuni Cafe, Nopa and 2 more"; '' = not ordered anywhere */
+function alreadyOrdered(item, v){
+  const at = orderedAt.get(itemKey(item));
+  if(!at || !at.length) return '';
+  const here = vKey(v);
+  const names = at.filter(k => k !== here).map(k => {
+    const x = (venuesByKey.get(k) || [])[0];
+    if(!x) return '';
+    const twins = (venuesByName.get(normTxt(x.name)) || []).length > 1;
+    return x.name + (twins && x.location ? ' (' + x.location + ')' : '');
+  }).filter(Boolean);
+  const atHere = at.indexOf(here) >= 0;
+  if(!atHere && !names.length) return '';
+  const list = names.length > 3 ? names.slice(0, 2).join(', ') + ' and ' + (names.length - 2) + ' more'
+             : names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
+             : names.join('');
+  return (atHere ? 'here' : '') + (atHere && names.length ? ' and ' : '') + (names.length ? 'at ' + list : '');
+}
+/* one To Order row on the detail sheet: struck, and where it was had underneath */
+function wantCell(item, v){
+  const where = alreadyOrdered(item, v);
+  return where
+    ? '<span><span class="hadx">' + escapeHtml(item) + '</span><span class="had">already ordered ' + escapeHtml(where) + '</span></span>'
+    : '<span>' + escapeHtml(item) + '</span>';
+}
+function wantHtmlFor(item, v){
+  return alreadyOrdered(item, v) ? '<span class="hadx">' + escapeHtml(item) + '</span>' : escapeHtml(item);
+}
 function ratingBadgeClass(r){
   r = (r||'').trim();
   if(r==='y') return 'y';
@@ -934,7 +1004,7 @@ function render(){
         ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
       <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${state.near ? `<span class="dist">${fmtDist(distOf(v))}${isApproxGeo(v)?'*':''}</span>` : ''}</div>
-      ${v.toOrder ? `<div class="toorder"><span class="tolabel">To Order:</span> ${escapeHtml(String(v.toOrder).split(/[;,]/).map(x=>x.trim()).filter(Boolean).join(', '))}</div>` : ''}
+      ${v.toOrder ? `<div class="toorder"><span class="tolabel">To Order:</span> ${splitItems(v.toOrder).map(x => wantHtmlFor(x, v)).join(', ')}</div>` : ''}
     `;
     el.addEventListener('click', () => openDetail(v));
     list.appendChild(el);
@@ -1085,9 +1155,9 @@ const menuFormSheet = document.getElementById('menuFormSheet');
 function openDetail(v){
   const eaten = menus[vKey(v)] || {};
   const itemCount = Object.values(eaten).reduce((n,a)=>n+a.length,0);
-  const wants = String(v.toOrder||'').split(/[;,]/).map(x=>x.trim()).filter(Boolean);
+  const wants = splitItems(v.toOrder);
   const wantHtml = '<div class="field"><label>To Order</label>' +
-    wants.map((w,i)=>`<div class="wantrow"><span>${escapeHtml(w)}</span><button class="ate" data-i="${i}" type="button">ate it</button></div>`).join('') +
+    wants.map((w,i)=>`<div class="wantrow">${wantCell(w, v)}<button class="ate" data-i="${i}" type="button">ate it</button></div>`).join('') +
     `<div class="wantadd">
        <input id="d_want" placeholder="to order" autocomplete="off">
        <button id="d_wantAdd" type="button">add</button>
@@ -1106,7 +1176,7 @@ function openDetail(v){
   // nothing on the sheet can change it except reopening it
   const wantShown = shut
     ? (wants.length ? '<div class="field"><label>To Order</label>' +
-        wants.map(w => `<div class="wantrow"><span>${escapeHtml(w)}</span></div>`).join('') + '</div>' : '')
+        wants.map(w => `<div class="wantrow">${wantCell(w, v)}</div>`).join('') + '</div>' : '')
     : wantHtml;
   document.getElementById('detailContent').innerHTML = `
     <h2 class="${shut ? 'closed' : ''}">${escapeHtml(v.name||'')}${closedTag(v)}</h2>
@@ -1281,6 +1351,7 @@ function openForm(v){
   document.getElementById('f_name').value = v ? (v.name||'') : '';
   document.getElementById('f_category').value = v ? (v.category||'') : '';
   document.getElementById('f_location').value = v ? (v.location||'') : '';
+  document.getElementById('f_address').value = v ? (v.address||'') : '';
   document.getElementById('f_rating').value = v ? (v.rating||'').trim() : '';
   document.getElementById('f_toOrder').value = v ? (v.toOrder||'') : '';
   document.getElementById('f_notes').value = v ? (v.notes||'') : '';
@@ -1303,7 +1374,7 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     name: document.getElementById('f_name').value.trim(),
     category: document.getElementById('f_category').value.trim(),
     location: document.getElementById('f_location').value.trim(),
-    address: editingVenue ? (editingVenue.address||'') : '',
+    address: document.getElementById('f_address').value.trim(),
     lat: editingVenue ? (editingVenue.lat||'') : '',
     lng: editingVenue ? (editingVenue.lng||'') : '',
     geo: editingVenue ? (editingVenue.geo||'') : '',
@@ -1314,6 +1385,11 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     chain: editingVenue ? (editingVenue.chain||'') : ''   // never blank an existing flag
   };
   if(!rec.name){ alert('Enter a name.'); return; }
+  // a new or changed address makes the old point wrong: drop it, and nearest
+  // looks the address up (street-level = exact) the next time it is near
+  if(rec.address !== (editingVenue ? String(editingVenue.address||'').trim() : '')){
+    rec.lat = ''; rec.lng = ''; rec.geo = '';
+  }
   rememberCategory(rec.category);   // typed once, offered from then on
   // closeForm() clears editingVenue, so hold on to it first: without this the
   // save fell through to the "add" branch and every edit wrote a second row.
@@ -1603,7 +1679,7 @@ function categoryOptions(){
     if(seen.has(normTxt(c))) return;
     seen.add(normTxt(c)); out.push(c);
   });
-  return out;
+  return out.filter(c => !isGenericCategory(c));   // "restaurant" is never offered
 }
 function locationOptions(){ return distinctValues(v => v.location).map(x => x.label); }
 function vendorOptions(){ return distinctValues(r => r.vendor, menuRows).map(x => x.label); }
@@ -1917,7 +1993,7 @@ function duplicateGroups(){
    field, To Order is the union with the shorter of two overlapping notes
    dropped ("agua fresca" inside "agua fresca mango"). */
 function mergeDupes(group){
-  const parts = t => String(t||'').split(/[;,]/).map(x => x.trim()).filter(Boolean);
+  const parts = splitItems;
   const out = Object.assign({}, group[0]);
   let want = parts(out.toOrder);
   group.slice(1).forEach(v => {
@@ -2420,7 +2496,10 @@ function findDataIssues(){
   const dupeGroups = duplicateGroups();
   const umbrellas = chainUmbrellaRows();
   const strays = strayLogRows();
-  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays };
+  const noAddress = noAddressRows();
+  const lookups = lookupRows();
+  const generic = liveVenues().filter(v => !isClosed(v) && isGenericCategory(v.category));
+  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays, noAddress, lookups, generic };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -2442,7 +2521,11 @@ function renderDiag(){
          d.umbrellas.length ? [...new Set(d.umbrellas.map(v => v.location))].join(', ') : '') +
     line(d.falseFlags.length, 'Flagged but nothing logged', sample(d.falseFlags)) +
     line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
-    line(d.noGeo.length, 'Missing coordinates', 'excluded from nearest') +
+    line(d.noAddress.length, 'No address',
+         d.noAddress.length ? addressDetail(d) : '') +
+    line(d.generic.length, 'Category says only "restaurant"',
+         d.generic.length ? 'the lookup puts the cuisine in its place, or clears it' : '') +
+    line(d.noGeo.length, 'Missing coordinates', d.noGeo.length ? 'placed at their town\'s centre in nearest' : '') +
     line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained)) +
     line(venues.filter(isClosed).length, 'Marked closed', 'kept on the list, in red, read-only');
   const btn = document.getElementById('diagFixFlags');
@@ -2465,6 +2548,14 @@ function renderDiag(){
   const st = d.strays.length;
   sbtn.textContent = st ? 'Attach ' + st + ' logged item' + (st===1?'':'s') : 'Logged items are attached';
   sbtn.disabled = !st;
+  const lbtn = document.getElementById('diagLookup');
+  if(!lookupRun){
+    const lk = d.lookups.length, gl = d.generic.length;
+    lbtn.textContent = lk ? 'Look up ' + lk + ' place' + (lk===1?'':'s') + ' (about ' + Math.max(1, Math.ceil(lk * GEOCODE_GAP_MS / 60000)) + ' min)'
+                     : gl ? 'Clear ' + gl + ' "restaurant" categor' + (gl===1?'y':'ies')
+                     : 'Nothing to look up';
+    lbtn.disabled = !lk && !gl;
+  }
 }
 function openDiag(){
   renderDiag();
@@ -2570,6 +2661,157 @@ document.getElementById('diagFixFlags').addEventListener('click', async () => {
     }
     await loadAll(); render(); renderDiag();
   });
+});
+
+/* ====== ADDRESSES AND CUISINES ======
+   Places entered through the app carry no address, and an import left a category
+   that says only "restaurant" on a lot of rows. Both are fixed from one lookup per
+   place on OpenStreetMap (Nominatim, one request every 1.1 s per their policy):
+   name + Location, accepted only when OSM calls it a business, the result has a
+   street number, shares a distinctive word with the name and lands within 25 miles
+   of where the row already sits (or, with nothing to compare, in the same town).
+   The street address is written with OSM's point for it (Geo Precision 'name').
+   A generic category takes OSM's cuisine - in the sheet's own spelling when the
+   sheet already has it - or is cleared, since "restaurant" says nothing. A place
+   OSM cannot find is remembered on this device and not asked again; it is listed
+   so the address can be typed in Edit. Chains (no one address), closed rows and
+   rows with no Location are not looked up. */
+const GENERIC_CATEGORIES = ['restaurant','restaurants','food','eat','eats','eatery','eateries','dining','eat + drink','eat and drink','eat & drink'];
+function isGenericCategory(c){ return GENERIC_CATEGORIES.indexOf(normTxt(c)) >= 0; }
+const MISS_STORE = 'eatdrink.lookupMisses';
+let lookupMisses = new Set();
+try{ lookupMisses = new Set(JSON.parse(localStorage.getItem(MISS_STORE) || '[]')); }catch(e){ lookupMisses = new Set(); }
+function saveMisses(){ try{ localStorage.setItem(MISS_STORE, JSON.stringify([...lookupMisses])); }catch(e){} }
+function noAddressRows(){ return liveVenues().filter(v => !isClosed(v) && !isChain(v) && !String(v.address||'').trim()); }
+function lookupable(v){ return !v.pending && !isClosed(v) && !isChain(v) && !!String(v.location||'').trim() && !isPseudoLocation(v.location); }
+function lookupRows(){
+  return liveVenues().filter(v => lookupable(v) && !lookupMisses.has(vKey(v))
+    && (!String(v.address||'').trim() || isGenericCategory(v.category)));
+}
+function addressDetail(d){
+  const missed = d.noAddress.filter(v => lookupMisses.has(vKey(v)));
+  const noLoc = d.noAddress.filter(v => !lookupable(v));
+  const can = d.noAddress.length - missed.length - noLoc.length;
+  return [can ? can + ' can be looked up' : '',
+          noLoc.length ? noLoc.length + ' have no location' : '',
+          missed.length ? missed.length + ' not found online — type them in Edit: ' +
+            missed.slice(0, 6).map(v => v.name).join('; ') + (missed.length > 6 ? ' …' : '') : ''
+         ].filter(Boolean).join(' · ');
+}
+const PLACE_URL = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=us&addressdetails=1&extratags=1&q=';
+const NAME_FILLER = ['the','and','cafe','bar','restaurant','kitchen','co','company','grill','house','of','la','el','le','de','sf'];
+function nameWords(s){ return itemKey(s).split(' ').filter(w => w.length > 1 && NAME_FILLER.indexOf(w) < 0); }
+const PLACE_TYPES = { bar:'Bar', pub:'Bar', cafe:'Cafe', ice_cream:'Ice Cream', bakery:'Bakery', pastry:'Bakery',
+                      biergarten:'Beer Garden', coffee:'Coffee', deli:'Deli', wine:'Wine' };
+const CUISINE_WORDS = { coffee_shop:'Coffee', ice_cream:'Ice Cream', bubble_tea:'Boba', fine_dining:'', regional:'', international:'' };
+function cuisineOf(h){
+  const raw = String((h.extratags || {}).cuisine || '').split(';')[0].trim().toLowerCase();
+  let label = raw ? (raw in CUISINE_WORDS ? CUISINE_WORDS[raw] : raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
+                  : (PLACE_TYPES[h.type] || '');
+  if(!label) return '';
+  const k = itemKey(label);
+  const own = distinctValues(v => v.category).map(x => x.label)
+    .find(c => !isGenericCategory(c) && itemKey(c) === k);      // "Burgers" for burger
+  return own || label;
+}
+async function findPlace(v){
+  const res = await fetch(PLACE_URL + encodeURIComponent(v.name + ', ' + v.location), { headers: { 'Accept': 'application/json' } });
+  if(!res.ok) throw new Error('http ' + res.status);
+  const hits = await res.json();
+  const want = nameWords(v.name), was = coordsOf(v);
+  const town = normTxt(String(v.location || '').split(',')[0]);
+  for(const h of (Array.isArray(hits) ? hits : [])){
+    if(BUSINESS_CLASSES.indexOf(h.category) < 0) continue;
+    const a = h.address || {};
+    if(!a.house_number || !a.road) continue;
+    const got = nameWords(h.name || '');
+    if(want.length ? !want.some(w => got.indexOf(w) >= 0) : itemKey(h.name) !== itemKey(v.name)) continue;
+    const c = { lat: +(+h.lat).toFixed(6), lng: +(+h.lon).toFixed(6) };
+    const place = a.city || a.town || a.village || a.hamlet || '';
+    if(was ? haversine(was.lat, was.lng, c.lat, c.lng) > 25 : normTxt(place) !== town) continue;
+    const st = String(a['ISO3166-2-lvl4'] || '').replace(/^US-/, '');
+    return {
+      address: a.house_number + ' ' + a.road + (place ? ', ' + place : '') + (st ? ', ' + st : '') + (a.postcode ? ' ' + a.postcode : ''),
+      lat: c.lat, lng: c.lng, cuisine: cuisineOf(h)
+    };
+  }
+  return null;
+}
+/* the row at v's index, read back and checked; if rows moved, found again or null */
+async function liveRow(v){
+  try{
+    const d = await graph('GET', mainRow(v.index));
+    const cur = d && d.values && d.values[0] ? rowToObj(d.values[0], v.index) : null;
+    if(cur && vKey(cur) === vKey(v)) return cur;
+  }catch(e){}
+  await loadAll();
+  const m = matchVenue(v);
+  return m && !m.pending ? m : null;
+}
+let lookupRun = null;
+document.getElementById('diagLookup').addEventListener('click', async () => {
+  if(lookupRun){ lookupRun.stop = true; return; }       // the button is "stop" while it runs
+  const btn = document.getElementById('diagLookup');
+  await withBusy(async () => {
+    await loadAll();
+    const todo = lookupRows();
+    const todoKeys = new Set(todo.map(vKey));
+    const clearOnly = liveVenues().filter(v => !isClosed(v) && isGenericCategory(v.category) && !todoKeys.has(vKey(v)));
+    if(!todo.length && !clearOnly.length){ renderDiag(); return; }
+    const mins = Math.max(1, Math.ceil(todo.length * GEOCODE_GAP_MS / 60000));
+    if(!confirm((todo.length ? 'Look up ' + todo.length + ' place' + (todo.length===1?'':'s') +
+                  ' on OpenStreetMap (about ' + mins + ' min) for an address and, where the category says only "restaurant", the cuisine. ' : '') +
+                (clearOnly.length || todo.some(v => isGenericCategory(v.category))
+                  ? 'A "restaurant" category with no cuisine found is cleared. ' : '') +
+                'Keep this page open; tap the button again to stop.')) return;
+    lookupRun = { stop: false };
+    let addr = 0, cuis = 0, cleared = 0, missed = 0, done = 0;
+    try{
+      for(const v of todo){
+        if(lookupRun.stop) break;
+        if(done) await wait(GEOCODE_GAP_MS);
+        btn.textContent = 'looking up ' + (done + 1) + ' of ' + todo.length + ' — tap to stop';
+        let hit = null;
+        try{ hit = await findPlace(v); }
+        catch(e){ alert('OpenStreetMap stopped answering (' + e.message + '). What was found so far is saved.'); break; }
+        done++;
+        if(!hit){ lookupMisses.add(vKey(v)); missed++; }
+        const cur = await liveRow(v);
+        if(!cur || isClosed(cur)) continue;
+        const ch = {};
+        if(hit && !String(cur.address||'').trim()) Object.assign(ch, { address: hit.address, lat: hit.lat, lng: hit.lng, geo: 'name' });
+        if(isGenericCategory(cur.category)) ch.category = hit && hit.cuisine ? hit.cuisine : '';
+        if(!Object.keys(ch).length) continue;
+        const rec = Object.assign({}, cur, ch);
+        delete rec.index;
+        await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
+        Object.assign(v, ch, { index: cur.index });
+        if(ch.address) addr++;
+        if('category' in ch){ if(ch.category) cuis++; else cleared++; }
+        if(done % 10 === 0) saveMisses();
+      }
+      // generic categories the lookup never visits (chains, no location, not found before)
+      if(!lookupRun.stop){
+        for(const v of clearOnly){
+          const cur = await liveRow(v);
+          if(!cur || isClosed(cur) || !isGenericCategory(cur.category)) continue;
+          const rec = Object.assign({}, cur, { category: '' });
+          delete rec.index;
+          await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
+          cleared++;
+        }
+      }
+    } finally {
+      saveMisses();
+      lookupRun = null;
+    }
+    await loadAll(); populateCategories(); render(); renderDiag();
+    alert([addr + ' address' + (addr===1?'':'es') + ' added',
+           cuis ? cuis + ' categor' + (cuis===1?'y':'ies') + ' set from the cuisine' : '',
+           cleared ? cleared + ' "restaurant" categor' + (cleared===1?'y':'ies') + ' cleared' : '',
+           missed ? missed + ' not found online (listed in the data check)' : ''].filter(Boolean).join(', ') + '.');
+  });
+  renderDiag();
 });
 
 async function checkVersion(){

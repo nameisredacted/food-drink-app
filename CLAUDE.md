@@ -521,3 +521,45 @@ Lounge, The Palm Theater, Silver Bar & Cocktail Lounge, Black Sheep Bar & Grill,
 city list frozen at the 10-13 check, so cities added after it slipped through; classify every
 Location against the nine-county line on any future sweep. Backup:
 `archive/Food + Drink (pre-move-out SLO 20261019).xlsx`.
+
+## Already ordered, addresses, generic categories (2026.10.28-1)
+
+**Already ordered.** The user's rule: To Order is for unique dishes, not the same item in a
+second place. An item on any To Order that the Menu Details log shows was already ordered — at
+this place or any other — is **struck through** (list line and detail sheet) with *already ordered
+at X* / *here* underneath. Nothing is removed or written. Identity is the item text through
+`itemKey()`: case, accents, punctuation, a plural `s` and a count (`6 kumamotos` = `kumamoto x6`)
+are ignored, nothing else — so **a regional or otherwise labelled item is its own thing** (user,
+2026-10-28: `Kumamoto, Humboldt Bay` never matches a plain `kumamoto`). No product table, no
+aliases: that was proposed and rejected as too much.
+
+To Order splitting (`splitItems`): `; ` separates items; a value with no semicolon at all still
+splits on commas (older rows), but once a `;` is present a comma belongs to the item.
+
+**No address.** The data check's old *Missing coordinates — excluded from nearest* line (200+) was
+wrong on both counts — those rows borrow their town's centre — and what was really missing was the
+address: every place entered through the app has none. The data check now lists **No address**
+(not chains, not closed) and **Look up N places** runs one Nominatim lookup per place (1.1 s apart,
+the button turns into *stop*): `name, Location`, `addressdetails` + `extratags`, accepted only for a
+business class with a house number, a distinctive name word in common (`nameWords`, filler like
+*the / cafe / bar* ignored — so *Rose Street* does not answer for *Rose Street Diner*) and within
+25 mi of where the row sits (same town when there is no point). Writes the street address and OSM's
+point, Geo Precision `name`. Every write reads the row back by index first (`liveRow`) and re-finds
+it if rows moved — the run takes minutes and the phone may edit meanwhile. Places OSM cannot find
+are remembered per browser (`eatdrink.lookupMisses`), not asked again, and listed by name so the
+address can be typed: the form now has an **Address** field; a new or changed address clears
+Lat/Lng/Geo so nearest geocodes it by address (street-level = `exact`).
+
+**Generic categories.** `Restaurant` / `Restaurants` / `Food` / `Eat` / `Dining` … (the user:
+useless, added without their input) — the same lookup puts OSM's cuisine in their place, in the
+sheet's own spelling when it has one (`Burgers` for burger), or clears it. Chains and rows with no
+location are cleared without a lookup. `categoryOptions()` never offers a generic one. Nothing in
+this app writes them; where they came from is not known (the workbook was not readable from the
+session that made this change).
+
+**Chains in nearest — open, options given to the user (2026-10-28), nothing built.** Recommended:
+a Branches table (Chain | Address | Lat | Lng) filled once for the nine counties by a data-check
+lookup per chain (Nominatim, bounded to the Bay Area box), nearest showing each chain once at its
+closest branch. Alternatives: live lookup per nearest tap (slow: one request per chain per second),
+Overpass `brand:wikidata` in one query (fast, but overpass-api.de has been answering some browser
+requests with 406 and no CORS header — could not be tested from the session).
