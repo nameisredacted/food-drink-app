@@ -779,7 +779,7 @@ const check = (name, fn) => {
   });
 }
 
-/* ---------- data check: addresses and "restaurant" categories ---------- */
+/* ---------- data check: addresses (a category is never written) ---------- */
 {
   const osm = (name, extra) => Object.assign({ name, lat: '37.7733', lon: '-122.4390', category: 'amenity', type: 'restaurant',
     place_rank: 30, address: { house_number: '306', road: 'Broderick Street', city: 'San Francisco', 'ISO3166-2-lvl4': 'US-CA', postcode: '94117' } }, extra);
@@ -801,19 +801,19 @@ const check = (name, fn) => {
   });
   await a.settle(400);
   a.w.eval('openDiag()');
-  check('data check: lists places with no address, and generic categories', () => {
+  check('data check: lists places with no address', () => {
     const t = a.$('diagBody').textContent;
     if(!/No address\s*4/.test(t)) throw new Error(t);
-    if(!/Category says only "restaurant"\s*3/.test(t)) throw new Error(t);
-    if(!/Look up 5 places/.test(a.$('diagLookup').textContent)) throw new Error(a.$('diagLookup').textContent);
+    if(/restaurant/i.test(t)) throw new Error(t);
+    if(!/Look up 4 places/.test(a.$('diagLookup').textContent)) throw new Error(a.$('diagLookup').textContent);
   });
   a.click(a.$('diagLookup')); await a.settle(9000);
   const row = n => a.state.venues.find(r => r[0] === n);
-  check('lookup: address, point and cuisine written for a found place', () => {
+  check('lookup: address and point written for a found place, category untouched', () => {
     const r = row('Nopalito');
     if(r[7] !== '306 Broderick Street, San Francisco, CA 94117') throw new Error(r[7]);
     if(r[8] !== 37.7733 || r[10] !== 'name') throw new Error(r.slice(8, 11).join(','));
-    if(r[1] !== 'Mexican') throw new Error('category ' + r[1]);
+    if(r[1] !== 'Restaurant') throw new Error('category ' + r[1]);
   });
   check('lookup: a found place keeps its real category', () => {
     const r = row('Lers Ros');
@@ -822,13 +822,14 @@ const check = (name, fn) => {
   check('lookup: a street that shares the name is not taken', () => {
     if(row('Rose Street Diner')[7]) throw new Error('took the street');
   });
-  check('lookup: a different business at the result is not taken; its generic category is cleared', () => {
+  check('lookup: a row that has an address is not looked up and its category is untouched', () => {
     const r = row('Ghost Kitchen');
-    if(r[1] !== '' || r[7] !== '12 Main St') throw new Error(r.join('|'));
+    if(a.state.geocoded.some(q => /Ghost Kitchen/.test(q))) throw new Error('looked up');
+    if(r[1] !== 'Restaurants' || r[7] !== '12 Main St') throw new Error(r.join('|'));
   });
-  check('lookup: a chain is never looked up, but "restaurant" is cleared from it', () => {
+  check('lookup: a chain is never looked up and its category is untouched', () => {
     if(a.state.geocoded.some(q => /In-N-Out/.test(q))) throw new Error('chain looked up');
-    if(row('In-N-Out')[1] !== '') throw new Error(row('In-N-Out')[1]);
+    if(row('In-N-Out')[1] !== 'Restaurant') throw new Error(row('In-N-Out')[1]);
   });
   check('lookup: rows with an address and a real category are left alone', () => {
     if(a.state.geocoded.some(q => /Mexican Place/.test(q))) throw new Error('looked up');

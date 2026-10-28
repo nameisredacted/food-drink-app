@@ -413,7 +413,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.10.28-2";
+const APP_VERSION = "2026.10.28-3";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -1680,7 +1680,7 @@ function categoryOptions(){
     if(seen.has(normTxt(c))) return;
     seen.add(normTxt(c)); out.push(c);
   });
-  return out.filter(c => !isGenericCategory(c));   // "restaurant" is never offered
+  return out;
 }
 function locationOptions(){ return distinctValues(v => v.location).map(x => x.label); }
 function vendorOptions(){ return distinctValues(r => r.vendor, menuRows).map(x => x.label); }
@@ -2499,8 +2499,7 @@ function findDataIssues(){
   const strays = strayLogRows();
   const noAddress = noAddressRows();
   const lookups = lookupRows();
-  const generic = liveVenues().filter(v => !isClosed(v) && isGenericCategory(v.category));
-  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays, noAddress, lookups, generic };
+  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays, noAddress, lookups };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -2524,8 +2523,6 @@ function renderDiag(){
     line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
     line(d.noAddress.length, 'No address',
          d.noAddress.length ? addressDetail(d) : '') +
-    line(d.generic.length, 'Category says only "restaurant"',
-         d.generic.length ? 'the lookup puts the cuisine in its place, or clears it' : '') +
     line(d.noGeo.length, 'Missing coordinates', d.noGeo.length ? 'placed at their town\'s centre in nearest' : '') +
     line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained)) +
     line(venues.filter(isClosed).length, 'Marked closed', 'kept on the list, in red, read-only');
@@ -2551,11 +2548,10 @@ function renderDiag(){
   sbtn.disabled = !st;
   const lbtn = document.getElementById('diagLookup');
   if(!lookupRun){
-    const lk = d.lookups.length, gl = d.generic.length;
+    const lk = d.lookups.length;
     lbtn.textContent = lk ? 'Look up ' + lk + ' place' + (lk===1?'':'s') + ' (about ' + Math.max(1, Math.ceil(lk * GEOCODE_GAP_MS / 60000)) + ' min)'
-                     : gl ? 'Clear ' + gl + ' "restaurant" categor' + (gl===1?'y':'ies')
                      : 'Nothing to look up';
-    lbtn.disabled = !lk && !gl;
+    lbtn.disabled = !lk;
   }
 }
 function openDiag(){
@@ -2664,21 +2660,17 @@ document.getElementById('diagFixFlags').addEventListener('click', async () => {
   });
 });
 
-/* ====== ADDRESSES AND CUISINES ======
-   Places entered through the app carry no address, and an import left a category
-   that says only "restaurant" on a lot of rows. Both are fixed from one lookup per
+/* ====== ADDRESSES ======
+   Places entered through the app carry no address. It is filled from one lookup per
    place on OpenStreetMap (Nominatim, one request every 1.1 s per their policy):
    name + Location, accepted only when OSM calls it a business, the result has a
    street number, shares a distinctive word with the name and lands within 25 miles
    of where the row already sits (or, with nothing to compare, in the same town).
    The street address is written with OSM's point for it (Geo Precision 'name').
-   A generic category takes OSM's cuisine - in the sheet's own spelling when the
-   sheet already has it - or is cleared, since "restaurant" says nothing. A place
+   The lookup never writes a category: a category is only what the user typed. A place
    OSM cannot find is remembered on this device and not asked again; it is listed
    so the address can be typed in Edit. Chains (no one address), closed rows and
    rows with no Location are not looked up. */
-const GENERIC_CATEGORIES = ['restaurant','restaurants','food','eat','eats','eatery','eateries','dining','eat + drink','eat and drink','eat & drink'];
-function isGenericCategory(c){ return GENERIC_CATEGORIES.indexOf(normTxt(c)) >= 0; }
 const MISS_STORE = 'eatdrink.lookupMisses';
 let lookupMisses = new Set();
 try{ lookupMisses = new Set(JSON.parse(localStorage.getItem(MISS_STORE) || '[]')); }catch(e){ lookupMisses = new Set(); }
@@ -2687,7 +2679,7 @@ function noAddressRows(){ return liveVenues().filter(v => !isClosed(v) && !isCha
 function lookupable(v){ return !v.pending && !isClosed(v) && !isChain(v) && !!String(v.location||'').trim() && !isPseudoLocation(v.location); }
 function lookupRows(){
   return liveVenues().filter(v => lookupable(v) && !lookupMisses.has(vKey(v))
-    && (!String(v.address||'').trim() || isGenericCategory(v.category)));
+    && !String(v.address||'').trim());
 }
 function addressDetail(d){
   const missed = d.noAddress.filter(v => lookupMisses.has(vKey(v)));
@@ -2702,19 +2694,6 @@ function addressDetail(d){
 const PLACE_URL = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&countrycodes=us&addressdetails=1&extratags=1&q=';
 const NAME_FILLER = ['the','and','cafe','bar','restaurant','kitchen','co','company','grill','house','of','la','el','le','de','sf'];
 function nameWords(s){ return itemKey(s).split(' ').filter(w => w.length > 1 && NAME_FILLER.indexOf(w) < 0); }
-const PLACE_TYPES = { bar:'Bar', pub:'Bar', cafe:'Cafe', ice_cream:'Ice Cream', bakery:'Bakery', pastry:'Bakery',
-                      biergarten:'Beer Garden', coffee:'Coffee', deli:'Deli', wine:'Wine' };
-const CUISINE_WORDS = { coffee_shop:'Coffee', ice_cream:'Ice Cream', bubble_tea:'Boba', fine_dining:'', regional:'', international:'' };
-function cuisineOf(h){
-  const raw = String((h.extratags || {}).cuisine || '').split(';')[0].trim().toLowerCase();
-  let label = raw ? (raw in CUISINE_WORDS ? CUISINE_WORDS[raw] : raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()))
-                  : (PLACE_TYPES[h.type] || '');
-  if(!label) return '';
-  const k = itemKey(label);
-  const own = distinctValues(v => v.category).map(x => x.label)
-    .find(c => !isGenericCategory(c) && itemKey(c) === k);      // "Burgers" for burger
-  return own || label;
-}
 async function findPlace(v){
   const res = await fetch(PLACE_URL + encodeURIComponent(v.name + ', ' + v.location), { headers: { 'Accept': 'application/json' } });
   if(!res.ok) throw new Error('http ' + res.status);
@@ -2733,7 +2712,7 @@ async function findPlace(v){
     const st = String(a['ISO3166-2-lvl4'] || '').replace(/^US-/, '');
     return {
       address: a.house_number + ' ' + a.road + (place ? ', ' + place : '') + (st ? ', ' + st : '') + (a.postcode ? ' ' + a.postcode : ''),
-      lat: c.lat, lng: c.lng, cuisine: cuisineOf(h)
+      lat: c.lat, lng: c.lng
     };
   }
   return null;
@@ -2756,17 +2735,13 @@ document.getElementById('diagLookup').addEventListener('click', async () => {
   await withBusy(async () => {
     await loadAll();
     const todo = lookupRows();
-    const todoKeys = new Set(todo.map(vKey));
-    const clearOnly = liveVenues().filter(v => !isClosed(v) && isGenericCategory(v.category) && !todoKeys.has(vKey(v)));
-    if(!todo.length && !clearOnly.length){ renderDiag(); return; }
+    if(!todo.length){ renderDiag(); return; }
     const mins = Math.max(1, Math.ceil(todo.length * GEOCODE_GAP_MS / 60000));
-    if(!confirm((todo.length ? 'Look up ' + todo.length + ' place' + (todo.length===1?'':'s') +
-                  ' on OpenStreetMap (about ' + mins + ' min) for an address and, where the category says only "restaurant", the cuisine. ' : '') +
-                (clearOnly.length || todo.some(v => isGenericCategory(v.category))
-                  ? 'A "restaurant" category with no cuisine found is cleared. ' : '') +
+    if(!confirm('Look up ' + todo.length + ' place' + (todo.length===1?'':'s') +
+                ' on OpenStreetMap (about ' + mins + ' min) for an address. ' +
                 'Keep this page open; tap the button again to stop.')) return;
     lookupRun = { stop: false };
-    let addr = 0, cuis = 0, cleared = 0, missed = 0, done = 0;
+    let addr = 0, missed = 0, done = 0;
     try{
       for(const v of todo){
         if(lookupRun.stop) break;
@@ -2781,26 +2756,13 @@ document.getElementById('diagLookup').addEventListener('click', async () => {
         if(!cur || isClosed(cur)) continue;
         const ch = {};
         if(hit && !String(cur.address||'').trim()) Object.assign(ch, { address: hit.address, lat: hit.lat, lng: hit.lng, geo: 'name' });
-        if(isGenericCategory(cur.category)) ch.category = hit && hit.cuisine ? hit.cuisine : '';
         if(!Object.keys(ch).length) continue;
         const rec = Object.assign({}, cur, ch);
         delete rec.index;
         await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
         Object.assign(v, ch, { index: cur.index });
         if(ch.address) addr++;
-        if('category' in ch){ if(ch.category) cuis++; else cleared++; }
         if(done % 10 === 0) saveMisses();
-      }
-      // generic categories the lookup never visits (chains, no location, not found before)
-      if(!lookupRun.stop){
-        for(const v of clearOnly){
-          const cur = await liveRow(v);
-          if(!cur || isClosed(cur) || !isGenericCategory(cur.category)) continue;
-          const rec = Object.assign({}, cur, { category: '' });
-          delete rec.index;
-          await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
-          cleared++;
-        }
       }
     } finally {
       saveMisses();
@@ -2808,8 +2770,6 @@ document.getElementById('diagLookup').addEventListener('click', async () => {
     }
     await loadAll(); populateCategories(); render(); renderDiag();
     alert([addr + ' address' + (addr===1?'':'es') + ' added',
-           cuis ? cuis + ' categor' + (cuis===1?'y':'ies') + ' set from the cuisine' : '',
-           cleared ? cleared + ' "restaurant" categor' + (cleared===1?'y':'ies') + ' cleared' : '',
            missed ? missed + ' not found online (listed in the data check)' : ''].filter(Boolean).join(', ') + '.');
   });
   renderDiag();

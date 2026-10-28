@@ -522,7 +522,7 @@ city list frozen at the 10-13 check, so cities added after it slipped through; c
 Location against the nine-county line on any future sweep. Backup:
 `archive/Food + Drink (pre-move-out SLO 20261019).xlsx`.
 
-## Already ordered, addresses, generic categories (2026.10.28-1)
+## Already ordered, addresses, categories (2026.10.28-1, -3)
 
 **Already ordered.** The user's rule: To Order is for unique dishes, not the same item in a
 second place. An item on any To Order that the Menu Details log shows was already ordered — at
@@ -551,12 +551,15 @@ are remembered per browser (`eatdrink.lookupMisses`), not asked again, and liste
 address can be typed: the form now has an **Address** field; a new or changed address clears
 Lat/Lng/Geo so nearest geocodes it by address (street-level = `exact`).
 
-**Generic categories.** `Restaurant` / `Restaurants` / `Food` / `Eat` / `Dining` … (the user:
-useless, added without their input) — the same lookup puts OSM's cuisine in their place, in the
-sheet's own spelling when it has one (`Burgers` for burger), or clears it. Chains and rows with no
-location are cleared without a lookup. `categoryOptions()` never offers a generic one. Nothing in
-this app writes them; where they came from is not known (the workbook was not readable from the
-session that made this change).
+**Categories are only what the user typed (2026.10.28-3).** `Restaurant` was a fossil of an early
+build that filled blank categories with it (the user, 2026-10-28) — not a type. The 230
+`Restaurant` cells were set blank in the workbook (backup
+`archive/Food + Drink (pre-restaurant-clear 20261028).xlsx`, only those cells changed). The -1 build's
+generic-category handling is gone: nothing is hidden or filtered from suggestions, and the
+data-check lookup writes the address and point only, never a category (no OSM cuisine). The
+other ~1,150 categories predate the Sep 7 workbook (`archive/Food Repository.xlsx`); about 655
+match the user's own `to eat` / RBC / bars sheet names, the rest could not be traced either way
+and were left for the user to decide.
 
 **Chains in nearest — open, options given to the user (2026-10-28), nothing built.** Recommended:
 a Branches table (Chain | Address | Lat | Lng) filled once for the nine counties by a data-check
