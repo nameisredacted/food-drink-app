@@ -732,49 +732,41 @@ const check = (name, fn) => {
 }
 
 
-/* ---------- already ordered: struck on To Order, wherever it was had ---------- */
+/* ---------- To Order: no strikethrough anywhere (2026.10.29-1) ---------- */
 {
   const a = app({
     venues: [
       ['Zuni Cafe','American','SF','roast chicken; caesar','','','x','','','','','',''],
-      ['Nopa','American','SF','Roast Chickens; Kumamoto, Humboldt Bay; 6 kumamotos; pork chop','','','','','','','','',''],
-      ['Hog Island Oyster Co.','Seafood','SF','','','','x','','','','','',''],
+      ['Arsicault Bakery','Bakery','SF','Almond Croissant, Chocolate chip Cookie','','','','','','','','',''],
     ],
-    menu: [['Zuni Cafe','SF','','Mains','roast chicken'], ['Hog Island Oyster Co.','SF','','Raw Bar','kumamoto x6']],
+    menu: [['Zuni Cafe','SF','','Mains','roast chicken'], ['Q Specialty Coffee','SF','','Pastry','Almond croissant']],
   });
   await a.settle(400);
   const detail = name => { a.w.eval('openDetail(venues.find(v => v.name === ' + JSON.stringify(name) + '))'); return a.$('detailContent'); };
-  const rows = c => Array.from(c.querySelectorAll('.wantrow')).map(r => ({
-    text: r.querySelector('span').textContent, struck: !!r.querySelector('.hadx'),
-    had: (r.querySelector('.hadx') || { title: '' }).title }));
-  const nopa = rows(detail('Nopa'));
-  check('ordered: a plural of a dish had elsewhere is struck, with where', () => {
-    const r = nopa.find(x => /Roast Chickens/.test(x.text));
-    if(!r.struck || r.had !== 'already ordered at Zuni Cafe') throw new Error(JSON.stringify(r));
+  const strikes = el => Array.from(el.querySelectorAll('*')).filter(x => /line-through/.test(a.w.getComputedStyle(x).textDecoration || '') || /line-through/.test(x.getAttribute('style') || '') || x.matches('s,del,strike,.hadx'));
+  check('to order: an item had at another place is not struck (detail sheet)', () => {
+    const c = detail('Arsicault Bakery');
+    const items = Array.from(c.querySelectorAll('.wantrow span')).map(x => x.textContent);
+    if(items.join('|') !== 'Almond Croissant|Chocolate chip Cookie') throw new Error(items.join('|'));
+    if(strikes(c).length) throw new Error(strikes(c).length + ' struck');
   });
-  check('ordered: a count and a plural still match ("6 kumamotos" = "kumamoto x6")', () => {
-    const r = nopa.find(x => /6 kumamotos/.test(x.text));
-    if(!r.struck || !/Hog Island/.test(r.had)) throw new Error(JSON.stringify(r));
-  });
-  check('ordered: a labelled / regional item is its own thing', () => {
-    const r = nopa.find(x => /Humboldt/.test(x.text));
-    if(r.struck) throw new Error('Kumamoto, Humboldt Bay was struck');
-  });
-  check('ordered: nothing struck that was never ordered', () => {
-    if(nopa.find(x => /pork chop/.test(x.text)).struck) throw new Error('pork chop struck');
-  });
-  check('ordered: had at this same place reads "here"', () => {
-    const r = rows(detail('Zuni Cafe')).find(x => /roast chicken/.test(x.text));
-    if(r.had !== 'already ordered here') throw new Error(r.had);
+  check('to order: an item had at this same place is not struck either', () => {
+    const c = detail('Zuni Cafe');
+    if(strikes(c).length) throw new Error('struck');
+    if(/already ordered/.test(c.innerHTML)) throw new Error('caption left');
   });
   a.w.eval('closeDetail()');
-  a.$('searchBox').value = 'nopa'; a.fire(a.$('searchBox'), 'input');
-  check('ordered: the list line strikes it too', () => {
+  a.$('searchBox').value = 'arsicault'; a.fire(a.$('searchBox'), 'input');
+  check('to order: the list line shows the items plain', () => {
     const line = a.$('list').querySelector('.toorder');
-    const struck = Array.from(line.querySelectorAll('.hadx')).map(x => x.textContent);
-    if(struck.join('|') !== 'Roast Chickens|6 kumamotos') throw new Error(struck.join('|'));
+    if(!/Almond Croissant, Chocolate chip Cookie/.test(line.textContent)) throw new Error(line.textContent);
+    if(strikes(line).length) throw new Error('struck');
   });
-  check('ordered: nothing was written', () => {
+  a.$('searchBox').value = 'croissant'; a.fire(a.$('searchBox'), 'input');
+  check('to order: search finds a place by an item on its To Order', () => {
+    if(!/Arsicault/.test(a.$('list').textContent)) throw new Error(a.$('list').textContent.slice(0, 200));
+  });
+  check('to order: nothing was written', () => {
     if(a.state.calls.length) throw new Error(a.state.calls.length + ' writes');
   });
 }

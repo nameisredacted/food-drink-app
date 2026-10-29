@@ -524,7 +524,20 @@ Location against the nine-county line on any future sweep. Backup:
 
 ## Already ordered, addresses, categories (2026.10.28-1, -3)
 
-**Already ordered.** The user's rule: To Order is for unique dishes, not the same item in a
+**Already ordered — withdrawn 2026.10.29-1.** The strike described below is gone: no To Order
+item is struck anywhere in eat + drink (user, 2026-10-29: "strikethroughs shouldn't be in the local
+food and drink app"; "if it's eaten it should be in ordered"). What set it off: **Almond Croissant**
+on both `Arsicault Bakery` and `Ariscault Bakery` (SF) was struck because the log has almond
+croissants at Abanico Coffee Roasters and Q Specialty Coffee — never at Arsicault. An item eaten at
+a place leaves its To Order through **ate it** and lands in the log; an item had elsewhere stays
+plain. `.hadx`, `orderedAt`, `buildOrderedIndex()` and `alreadyOrdered()` were removed;
+`wantCell` / `wantHtmlFor` render plain text; `itemKey()` stays for `nameWords()`. 40 items had been
+struck on the live list. Search still finds a place by any To Order item or anything logged at it.
+Open: `Ariscault Bakery` (397 Arguello Blvd, category `Chain`) and `Arsicault Bakery` (no address,
+point near Mission Bay) are two rows — Ariscault is a misspelling; whether they are two branches or
+one is the user's call. Nothing was written.
+
+History, kept for reference: the user's rule had been: To Order is for unique dishes, not the same item in a
 second place. An item on any To Order that the Menu Details log shows was already ordered — at
 this place or any other — is **struck through** (list line and detail sheet), a 1px line and
 nothing else, as in Notes and the travel app (2026.10.28-2 dropped -1's grey and caption line);

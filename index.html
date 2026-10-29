@@ -37,9 +37,6 @@
   .item-sub{font-size:13px;color:var(--muted);margin-top:3px;}
   .toorder{margin-top:5px;font-size:12px;color:var(--text);}
   .tolabel{color:var(--muted);}
-  /* an item already ordered somewhere: struck, the way a line is crossed off in Notes - a 1px
-     line, nothing else changes; where it was had is the hover title */
-  .hadx{text-decoration:line-through;text-decoration-thickness:1px;}
   .more{display:block;width:100%;padding:12px;text-align:center;background:var(--card2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
   .fab{position:fixed;bottom:20px;right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);color:#1a1208;font-size:28px;display:flex;align-items:center;justify-content:center;border:none;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:20;}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;display:none;}
@@ -413,7 +410,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.10.28-3";
+const APP_VERSION = "2026.10.29-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -724,10 +721,9 @@ async function loadAll(){
       if(!menus[r.vkey][sec]) menus[r.vkey][sec] = [];
       if(r.item) menus[r.vkey][sec].push(r.item);
     });
-    buildOrderedIndex();
   }catch(e){
     console.warn('menu load failed', e);
-    menuRows = []; menus = {}; orphanMenuRows = []; orderedAt = new Map();
+    menuRows = []; menus = {}; orphanMenuRows = [];
     window.__menuLoadError = e.message;
   }
   lastLoadAt = Date.now();
@@ -850,15 +846,11 @@ function hasMenu(v){
   return !!(m && Object.keys(m).length);
 }
 
-/* ====== ALREADY ORDERED ======
-   The point of To Order is something new, not the same thing in a second place.
-   An item on a place's To Order that the log shows was already ordered - here or
-   anywhere else - is struck through, with where it was had underneath. Nothing is
-   removed. Identity is the item's own text, loosened only for case, accents,
-   punctuation, a plural s and a count ("6 kumamotos", "kumamoto x6"), so a
-   labelled or regional item ("Kumamoto, Humboldt Bay", "Hog Island Sweetwater")
-   only ever matches the same label: it is its own thing. */
-let orderedAt = new Map();   // itemKey -> [venue rows it was ordered at]
+/* ====== ITEM TEXT ======
+   No strikethrough on To Order (2026.10.29-1, the user: strikethroughs do not belong in
+   eat + drink). An item eaten here leaves To Order through "ate it" and lands in the
+   ordered log; an item eaten somewhere else stays as it is. itemKey() survives for
+   nameWords(): case, accents, punctuation, a plural s and a count are ignored. */
 function itemKey(s){
   return normTxt(s).normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/^\d+\s+(x\s+)?/, '')                                // 6 kumamotos, 2 x tacos
@@ -874,46 +866,9 @@ function splitItems(s){
   s = String(s || '');
   return s.split(s.indexOf(';') >= 0 ? ';' : ',').map(x => x.trim()).filter(Boolean);
 }
-function buildOrderedIndex(){
-  orderedAt = new Map();
-  menuRows.forEach(r => {
-    if(!r.vkey || !r.item) return;
-    const k = itemKey(r.item);
-    if(!k) return;
-    const at = orderedAt.get(k) || orderedAt.set(k, []).get(k);
-    if(at.indexOf(r.vkey) < 0) at.push(r.vkey);
-  });
-}
-/* where an item was already ordered, as words: "here", "at Zuni Cafe",
-   "here and at Nopa", "at Zuni Cafe, Nopa and 2 more"; '' = not ordered anywhere */
-function alreadyOrdered(item, v){
-  const at = orderedAt.get(itemKey(item));
-  if(!at || !at.length) return '';
-  const here = vKey(v);
-  const names = at.filter(k => k !== here).map(k => {
-    const x = (venuesByKey.get(k) || [])[0];
-    if(!x) return '';
-    const twins = (venuesByName.get(normTxt(x.name)) || []).length > 1;
-    return x.name + (twins && x.location ? ' (' + x.location + ')' : '');
-  }).filter(Boolean);
-  const atHere = at.indexOf(here) >= 0;
-  if(!atHere && !names.length) return '';
-  const list = names.length > 3 ? names.slice(0, 2).join(', ') + ' and ' + (names.length - 2) + ' more'
-             : names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
-             : names.join('');
-  return (atHere ? 'here' : '') + (atHere && names.length ? ' and ' : '') + (names.length ? 'at ' + list : '');
-}
-/* one To Order row on the detail sheet: struck, and where it was had underneath */
-function wantCell(item, v){
-  const where = alreadyOrdered(item, v);
-  return where
-    ? '<span class="hadx" title="already ordered ' + escapeHtml(where) + '">' + escapeHtml(item) + '</span>'
-    : '<span>' + escapeHtml(item) + '</span>';
-}
-function wantHtmlFor(item, v){
-  const where = alreadyOrdered(item, v);
-  return where ? '<span class="hadx" title="already ordered ' + escapeHtml(where) + '">' + escapeHtml(item) + '</span>' : escapeHtml(item);
-}
+/* one To Order item: plain text, on the list line and on the detail sheet alike */
+function wantCell(item){ return '<span>' + escapeHtml(item) + '</span>'; }
+function wantHtmlFor(item){ return escapeHtml(item); }
 function ratingBadgeClass(r){
   r = (r||'').trim();
   if(r==='y') return 'y';
