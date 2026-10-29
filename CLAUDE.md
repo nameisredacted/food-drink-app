@@ -533,9 +533,14 @@ a place leaves its To Order through **ate it** and lands in the log; an item had
 plain. `.hadx`, `orderedAt`, `buildOrderedIndex()` and `alreadyOrdered()` were removed;
 `wantCell` / `wantHtmlFor` render plain text; `itemKey()` stays for `nameWords()`. 40 items had been
 struck on the live list. Search still finds a place by any To Order item or anything logged at it.
-Open: `Ariscault Bakery` (397 Arguello Blvd, category `Chain`) and `Arsicault Bakery` (no address,
-point near Mission Bay) are two rows — Ariscault is a misspelling; whether they are two branches or
-one is the user's call. Nothing was written.
+**Arsicault merged (2026-10-29, through the live app's Graph calls; user: "ariscault is a chain").**
+Two rows, identity name + location both SF: row 600 `Ariscault Bakery` | `Chain` | SF | `Almond
+Croissant; almond chocolate croissant; ham and cheese croissant` | 397 Arguello Blvd, exact point; row
+604 `Arsicault Bakery` | `Bakery` | SF | `Almond Croissant, Chocolate chip Cookie` | no address, OSM
+`name` point near Mission Bay. Row 604 was deleted and row 600 became `Arsicault Bakery` | `Bakery` |
+SF | `Almond Croissant; almond chocolate croissant; ham and cheese croissant; Chocolate chip Cookie` |
+Arguello address and point kept | **Chain `x`**. Category is `Bakery`, not the old `Chain` label — the
+Chain column carries that now. Neither row had logged items. 2279 venues.
 
 History, kept for reference: the user's rule had been: To Order is for unique dishes, not the same item in a
 second place. An item on any To Order that the Menu Details log shows was already ordered — at
