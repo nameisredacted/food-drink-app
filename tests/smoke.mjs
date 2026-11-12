@@ -992,6 +992,7 @@ const check = (name, fn) => {
       row('Che Fico', '', '', '', ''),                                   // entered through the app: no point
       row('Souvla', '', '', '', ''),                                     // two of them on the map
       row('20 Spot', '', '', '', ''),                                    // "Spot" is someone else
+      row('Fava', '', '', '', ''),                                       // filed under SF, stands in Daly City
       row('Gone', '9 Main St', '37.7700', '-122.4200', 'exact', '', 'closed'),
     ],
     osm: [
@@ -1003,6 +1004,7 @@ const check = (name, fn) => {
       el('Souvla', 37.7765, -122.4263, 'Mo-Su 11:00-21:00'),
       el('Souvla', 37.7609, -122.4215, 'Mo-Su 11:00-21:00'),
       el('Spot', 37.7700, -122.4300, 'Mo-Su 09:00-17:00'),
+      el('Fava', 37.7060, -122.4610, '', { 'addr:housenumber': '2114', 'addr:street': 'Vine Street', 'addr:city': 'Daly City', 'addr:postcode': '94014' }),
       el('Gone', 37.7700, -122.4200, 'Mo-Su 09:00-17:00'),
     ],
   });
@@ -1034,6 +1036,10 @@ const check = (name, fn) => {
     if(c[8] !== 37.7765 || c[9] !== -122.4381 || c[10] !== 'name') throw new Error(c.slice(8, 11).join('|'));
     if(c[7] !== '838 Divisadero Street, San Francisco, CA 94117') throw new Error(c[7]);
     if(c[13] !== 'Tu-Sa 17:30-22:00') throw new Error(String(c[13]));
+  });
+  check('hours lookup: the address carries the town the map gives, not the row\'s Location', () => {
+    if(r('Fava')[7] !== '2114 Vine Street, Daly City, CA 94014') throw new Error(r('Fava')[7]);
+    if(r('Fava')[2] !== 'San Francisco, CA') throw new Error('Location rewritten: ' + r('Fava')[2]);
   });
   check('hours lookup: a name that exists twice places nothing', () => {
     if(r('Souvla')[8] !== '' || r('Souvla')[13]) throw new Error(r('Souvla').join('|'));

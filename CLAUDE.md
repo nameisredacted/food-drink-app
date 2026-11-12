@@ -671,7 +671,9 @@ claim is made. The clock is always `America/Los_Angeles` (`pacificNow()`), not t
   a placed row; or the only place within ~250 ft whose name starts with the row's or vice
   versa. Sharing a word is not a match (the test case is *Thai House* / *Lers Ros Thai*).
   A row with no point is matched only to a name that exists once on the whole map, within 6 mi
-  of its town: it gets the point (`name`), the address if OSM has one, and the hours.
+  of its town: it gets the point (`name`), the address if OSM has one (with OSM's town when
+  it gives one — 2026.11.12-2: *Fava* is filed under Oakland and stands on Vine St, Berkeley),
+  and the hours.
   Each write reads the row back first (`liveRow`), as the address lookup does.
 
 **OSM is a partial source.** Measured on the San Francisco rows on 2026-11-12: OSM had 4,706
@@ -683,4 +685,4 @@ simply drops or retags those. Google's Places API (New) has both (`regularOpenin
 user's own API key and billing account; put to the user on 2026-11-12, nothing built.
 
 Tests: `app({ asleep, snapshot, osm })` in `tests/smoke.mjs` model the 401, the saved copy and
-Overpass. 120 checks.
+Overpass. 121 checks.

@@ -416,7 +416,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.11.12-1";
+const APP_VERSION = "2026.11.12-2";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -3058,7 +3058,7 @@ function osmPlaces(elements){
       lng: el.lon !== undefined ? el.lon : (el.center && el.center.lon),
       hours: String(t.opening_hours || '').trim(),
       num: String(t['addr:housenumber'] || '').trim(), street: String(t['addr:street'] || '').trim(),
-      zip: String(t['addr:postcode'] || '').trim() };
+      city: String(t['addr:city'] || '').trim(), zip: String(t['addr:postcode'] || '').trim() };
   }).filter(p => p.key && typeof p.lat === 'number' && typeof p.lng === 'number');
 }
 function osmIndex(places){
@@ -3098,8 +3098,14 @@ function osmChanges(v, m){   // what this match would change on the row as it st
   if(p.hours && p.hours.length <= 250 && p.hours !== String(v.hours || '').trim()) ch.hours = p.hours;
   if(m.move && !isPlaced(v)){
     ch.lat = +p.lat.toFixed(6); ch.lng = +p.lng.toFixed(6); ch.geo = 'name';
-    if(p.num && p.street && !String(v.address || '').trim())
-      ch.address = p.num + ' ' + p.street + (v.location ? ', ' + v.location : '') + (p.zip ? ' ' + p.zip : '');
+    // the town is OSM's when it gives one: a row filed under Oakland can stand on a
+    // Berkeley street, and the address should say where the door actually is
+    if(p.num && p.street && !String(v.address || '').trim()){
+      const st = String(v.location || '').split(',').slice(1).join(',').trim();
+      ch.address = p.num + ' ' + p.street +
+        (p.city ? ', ' + p.city + (st ? ', ' + st : '') : (v.location ? ', ' + v.location : '')) +
+        (p.zip ? ' ' + p.zip : '');
+    }
   }
   return ch;
 }
