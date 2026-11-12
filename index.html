@@ -416,7 +416,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.11.12-2";
+const APP_VERSION = "2026.11.12-3";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -469,6 +469,27 @@ async function getToken(){
 function isExcelAsleep(status, text){ return status === 401 && /FileOpenUserUnauthorized/.test(text || ''); }
 let readOnly = null;   // { at } while the list on screen is the copy saved on this device
 
+/* A workbook session, for runs that write hundreds of rows. Without one Excel opens
+   the file afresh for every call - about 1.2 s each, 2.5 s a row with the read-back,
+   which made the first hours run a 27-minute job. With one the file stays open
+   between calls. Only the long runs ask for it; everyday edits do not need it. */
+let wbSession = null;
+async function openSession(){
+  try{
+    const d = await graph('POST', '/createSession', { persistChanges: true });
+    wbSession = (d && d.id) || null;
+  }catch(e){ wbSession = null; }                 // slower without it, not broken
+}
+async function closeSession(){
+  const id = wbSession;
+  wbSession = null;
+  if(!id) return;
+  try{
+    await fetch(graphFileBase() + '/closeSession', { method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + await getToken(), 'Content-Type': 'application/json', 'workbook-session-id': id } });
+  }catch(e){ /* it times out by itself */ }
+}
+
 async function graph(method, path, body){
   if(readOnly && method !== 'GET'){
     const e = new Error('The list is read-only right now: the workbook could not be read. ' +
@@ -477,16 +498,21 @@ async function graph(method, path, body){
     throw e;
   }
   const token = await getToken();
+  const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  const session = wbSession;
+  if(session) headers['workbook-session-id'] = session;
   const res = await fetch(graphFileBase() + path, {
     method,
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined
   });
   if(!res.ok){
     const text = await res.text();
+    // a session that has timed out is dropped and the call made again without one
+    if(session && (res.status === 404 || /session/i.test(text))){
+      if(wbSession === session) wbSession = null;
+      return graph(method, path, body);
+    }
     const e = new Error(`Graph ${method} ${path} failed: ${res.status} ${text}`);
     if(isExcelAsleep(res.status, text)) e.excelAsleep = true;
     throw e;
@@ -513,6 +539,11 @@ const BASE_WIDTH = 11;
 const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain','closed','hours'];
 const CHAIN_COL = 'Chain', CLOSED_COL = 'Closed', HOURS_COL = 'Hours';
 let mainWidth = BASE_WIDTH;   // until the first read says otherwise
+/* Graph serves the pre-write copy for a moment after a write - including after a
+   column is added. A read in that window is one column short, and writing rows at
+   that width is refused (400, "doesn't match the size or dimensions of the range").
+   So the width never goes back below what this session has added. */
+let minWidth = BASE_WIDTH;
 
 function rowToObj(rowValues, index){
   const o = { index };
@@ -690,7 +721,7 @@ function resolveMenuVenue(r){
 let lastLoadAt = 0, refreshing = false, booted = false;
 function ingestVenues(rows){            // rows: [{ index, values }]
   if(rows.length && Array.isArray(rows[0].values))
-    mainWidth = Math.max(BASE_WIDTH, rows[0].values.length);
+    mainWidth = Math.max(minWidth, rows[0].values.length);
   venues = rows.map(r => rowToObj(r.values, r.index));
   applyPending();   // a delete or an add this read is too early to show
   buildLocCentroids();
@@ -2112,6 +2143,7 @@ async function ensureColumn(name){
     await graph('POST', `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/columns`,
       { name });
     mainWidth += 1;
+    minWidth = mainWidth;      // a stale read must not shrink it again
     return true;
   }catch(e){
     alert('Could not add the "' + name + '" column to the sheet: ' + e.message);
@@ -3124,6 +3156,7 @@ document.getElementById('diagHours').addEventListener('click', async () => {
       const places = osmPlaces(await fetchOsmFood());
       const byKey = osmIndex(places);
       if(!await ensureHoursColumn()) return;
+      await openSession();
       await loadAll();
       const todo = liveVenues().map(v => [v, matchOsm(v, places, byKey)])
         .filter(x => x[1] && Object.keys(osmChanges(x[0], x[1])).length);
@@ -3142,6 +3175,7 @@ document.getElementById('diagHours').addEventListener('click', async () => {
         if(ch.geo) moved++;
       }
     } finally {
+      await closeSession();
       hoursRun = null;
       btn.textContent = 'Look up hours';
     }

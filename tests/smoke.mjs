@@ -57,6 +57,9 @@ function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = nu
           const body = '{"error":{"code":"FileOpenUserUnauthorized","message":"You do not have permissions to open this file in the browser."}}';
           return { ok: false, status: 401, async text(){ return body; }, async json(){ return JSON.parse(body); } };
         }
+        if(u.includes('/createSession')){ state.sessions = (state.sessions || 0) + 1; return { ok: true, status: 201, async json(){ return { id: 'session-1' }; }, async text(){ return ''; } }; }
+        if(u.includes('/closeSession')){ state.sessionsClosed = (state.sessionsClosed || 0) + 1; return { ok: true, status: 204, async json(){ return null; }, async text(){ return ''; } }; }
+        if((opts.headers || {})['workbook-session-id']) state.inSession = (state.inSession || 0) + 1;
         const isMenu = u.includes('MenuDetails');
         if(m !== 'GET'){
           if(stale && !lag){ snapV = state.venues.map(r => r.slice()); snapM = state.menu.map(r => r.slice()); }
@@ -1017,6 +1020,11 @@ const check = (name, fn) => {
     if(a.state.osmAsked !== 1) throw new Error(a.state.osmAsked + ' requests');
     if(a.state.geocoded.length) throw new Error('per-place lookups: ' + a.state.geocoded.join('; '));
   });
+  check('hours lookup: the run holds one workbook session and closes it', () => {
+    if(a.state.sessions !== 1 || a.state.sessionsClosed !== 1) throw new Error(a.state.sessions + ' opened, ' + a.state.sessionsClosed + ' closed');
+    if(!a.state.inSession) throw new Error('writes went outside the session');
+    if(a.w.eval('wbSession') !== null) throw new Error('session left set for everyday calls');
+  });
   check('hours lookup: the Hours column is added once', () => {
     const cols = a.state.calls.filter(c => c.kind === 'addcol');
     if(cols.length !== 1 || cols[0].body.name !== 'Hours') throw new Error(JSON.stringify(cols));
@@ -1069,6 +1077,21 @@ const check = (name, fn) => {
   check('form: an edit keeps the hours', () => {
     if(r('Nopa')[5] !== 'get the pork chop') throw new Error('edit not saved');
     if(r('Nopa')[13] !== 'Mo-Su 17:00-23:00') throw new Error('hours blanked: ' + r('Nopa')[13]);
+  });
+}
+{
+  // Graph keeps serving the 13-column copy after the Hours column is added
+  const a = app({ stale: 20,
+    venues: [['Nopa','Food','San Francisco, CA','','','','','560 Divisadero St','37.7749','-122.4374','exact','','']],
+    osm: [{ type: 'node', lat: 37.7749, lon: -122.4374, tags: { name: 'Nopa', amenity: 'restaurant', opening_hours: 'Mo-Su 17:00-23:00' } }] });
+  await a.settle(300);
+  a.w.eval('openDiag()'); a.click(a.$('diagHours')); await a.settle(900);
+  check('hours lookup: a stale read after the column is added does not shrink the rows written', () => {
+    const patches = a.state.calls.filter(c => c.method === 'PATCH');
+    if(!patches.length) throw new Error('nothing written: ' + a.state.alerted);
+    const bad = patches.filter(c => c.body.values[0].length !== 14);
+    if(bad.length) throw new Error('row written at width ' + bad[0].body.values[0].length);
+    if(patches[0].body.values[0][13] !== 'Mo-Su 17:00-23:00') throw new Error(String(patches[0].body.values[0][13]));
   });
 }
 {

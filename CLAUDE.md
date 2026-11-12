@@ -685,4 +685,24 @@ simply drops or retags those. Google's Places API (New) has both (`regularOpenin
 user's own API key and billing account; put to the user on 2026-11-12, nothing built.
 
 Tests: `app({ asleep, snapshot, osm })` in `tests/smoke.mjs` model the 401, the saved copy and
-Overpass. 121 checks.
+Overpass. 123 checks.
+
+**A column added through Graph, then a stale read (2026.11.12-3).** The first live run of
+*Look up hours* added the `Hours` column and failed on its first row:
+`400 InvalidArgument — The number of rows or columns in the input array doesn't match the size
+or dimensions of the range`. The `loadAll()` straight after `ensureColumn()` was served the
+pre-write, 13-column copy (the same lag as *Write-through* above), which set `mainWidth` back
+to 13, and `objToRow()` then wrote 13 cells into a 14-column table. Nothing was written; the
+column stayed. `minWidth` now records the width after any column this session adds and
+`ingestVenues()` never goes below it. The same hole was there for `Chain` and `Closed`.
+
+**Long runs hold a workbook session (2026.11.12-3).** Without one, every Graph call makes Excel
+open the file again: the first live run wrote a row every 2.5 s (read-back + PATCH), 27 minutes
+for 671 rows. `openSession()` / `closeSession()` wrap the hours run; `graph()` sends
+`workbook-session-id` while one is open and drops it and retries once if Excel says the session
+is gone. Everyday edits do not open one.
+
+**The live run, 2026-11-12** (through the app's own button, in the desktop app's browser pane;
+backup first: `archive/Food + Drink (pre-hours 20261112).xlsx`, a OneDrive copy of the workbook
+as it stood). Overpass answered in 55 s with 26,254 places for the nine counties, 9,754 with
+hours. See the commit message of the run's follow-up for the counts written.
