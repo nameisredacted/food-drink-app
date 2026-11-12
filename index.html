@@ -70,8 +70,12 @@
   .errbox{background:rgba(224,98,95,.12);border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px;font-size:13px;margin-top:12px;max-width:340px;word-break:break-word;}
   .ver{font-size:10px;color:var(--muted);margin:-6px 0 6px;letter-spacing:.03em;}
   .ver a{color:var(--accent);text-decoration:underline;cursor:pointer;}
+  #staleBanner a, .gate a{color:var(--accent);text-decoration:underline;cursor:pointer;}
   .chip.near{background:#2b4c7a;color:#dce8f7;border-color:#3a6296;font-weight:600;}
   .dist{color:var(--accent);font-size:12px;margin-left:6px;}
+  .hrs{font-size:12px;margin-left:6px;color:var(--muted);}
+  .hrs.open{color:var(--good);}
+  .hrsrow{display:flex;justify-content:space-between;gap:16px;font-size:14px;padding:2px 0;max-width:280px;}
   .chip.dice{background:var(--accent);color:#1a1208;border-color:var(--accent);font-weight:600;}
   .chip.dice:active{opacity:.75;}
   .pickfrom{font-size:11px;color:var(--muted);margin-top:2px;}
@@ -271,6 +275,7 @@ select.on{color:#111;font-weight:700;}
   <h1>eat + drink <a class="loglink" id="logLink">ordered</a></h1>
   <div class="ver" id="verLine"></div>
   <div class="errbox" id="menuWarnBanner" style="display:none;margin-bottom:8px;"></div>
+  <div class="errbox" id="staleBanner" style="display:none;margin-bottom:8px;"></div>
   <div class="sugwrap">
     <div class="searchrow">
       <input class="search" id="searchBox" placeholder="search…" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
@@ -287,7 +292,7 @@ select.on{color:#111;font-weight:700;}
     <div class="chip dice" id="diceChip">pick one</div>
   </div>
   <div class="count" id="resultCount"></div>
-  <div class="count" id="geoNote" style="display:none;">* approximate — refines as you use it</div>
+  <div class="count" id="geoNote" style="display:none;"></div>
   <div class="count" id="nearWhere" style="display:none;"><span id="nearLabel"></span> · <span class="nearfix" id="nearFix" role="button">not here?</span></div>
   <div class="count" id="nearSet" style="display:none;"><input id="nearInput" placeholder="where are you? street, neighbourhood or town" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
 </header>
@@ -333,6 +338,7 @@ select.on{color:#111;font-weight:700;}
     <button class="btn ghost" id="diagFixUmbrellas">Fix chain rows</button>
     <button class="btn ghost" id="diagAttachStrays">Attach logged items</button>
     <button class="btn ghost" id="diagLookup">Look up addresses</button>
+    <button class="btn ghost" id="diagHours">Look up hours</button>
   </div>
 </div>
 
@@ -410,7 +416,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.10.29-1";
+const APP_VERSION = "2026.11.12-1";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -454,7 +460,22 @@ async function getToken(){
   }
 }
 
+/* Microsoft's Excel service - not OneDrive, and not this app - sometimes stops
+   answering for a personal account: every /workbook call comes back
+   401 FileOpenUserUnauthorized ("You do not have permissions to open this file in
+   the browser") while the file itself reads fine through the drive endpoints. The
+   token and the workbook are both good. Opening any workbook once in Excel for the
+   web wakes it for the whole account (seen 2026-11-12). */
+function isExcelAsleep(status, text){ return status === 401 && /FileOpenUserUnauthorized/.test(text || ''); }
+let readOnly = null;   // { at } while the list on screen is the copy saved on this device
+
 async function graph(method, path, body){
+  if(readOnly && method !== 'GET'){
+    const e = new Error('The list is read-only right now: the workbook could not be read. ' +
+                        'Open the workbook in Excel, come back, and the list reloads.');
+    e.userFacing = true;
+    throw e;
+  }
   const token = await getToken();
   const res = await fetch(graphFileBase() + path, {
     method,
@@ -466,7 +487,9 @@ async function graph(method, path, body){
   });
   if(!res.ok){
     const text = await res.text();
-    throw new Error(`Graph ${method} ${path} failed: ${res.status} ${text}`);
+    const e = new Error(`Graph ${method} ${path} failed: ${res.status} ${text}`);
+    if(isExcelAsleep(res.status, text)) e.excelAsleep = true;
+    throw e;
   }
   if(res.status === 204) return null;
   return res.json();
@@ -482,13 +505,13 @@ async function deleteTableRow(sheet, table, index){
   }
 }
 
-/* The workbook grew two columns after the original eleven: Chain (12th) and
-   Closed (13th). Either may be missing from an older copy, so rows are read and
-   written at the width the table actually has, and the data check adds a column
+/* The workbook grew three columns after the original eleven: Chain (12th),
+   Closed (13th) and Hours (14th). Any may be missing from an older copy, so rows
+   are read and written at the width the table actually has, and a column is added
    the first time it is needed. */
 const BASE_WIDTH = 11;
-const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain','closed'];
-const CHAIN_COL = 'Chain', CLOSED_COL = 'Closed';
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain','closed','hours'];
+const CHAIN_COL = 'Chain', CLOSED_COL = 'Closed', HOURS_COL = 'Hours';
 let mainWidth = BASE_WIDTH;   // until the first read says otherwise
 
 function rowToObj(rowValues, index){
@@ -503,6 +526,7 @@ function objToRow(o){
 }
 function hasChainCol(){ return mainWidth >= 12; }
 function hasClosedCol(){ return mainWidth >= 13; }
+function hasHoursCol(){ return mainWidth >= 14; }
 function isChain(v){ return String((v && v.chain) || '').trim().toLowerCase() === 'x'; }
 /* Closed places stay on the list - they are history, not clutter - but they are
    read-only and marked in red. Any non-empty value counts, so "closed 2026" or a
@@ -664,18 +688,10 @@ function resolveMenuVenue(r){
 }
 
 let lastLoadAt = 0, refreshing = false, booted = false;
-async function loadAll(){
-  // load table rows (paged)
-  let rows = [];
-  let next = `/worksheets('${encodeURIComponent(MAIN_SHEET)}')/tables('${MAIN_TABLE}')/rows`;
-  while(next){
-    const data = await graph('GET', next.startsWith('http') ? next.replace(graphFileBase(),'') : next);
-    rows = rows.concat(data.value);
-    next = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
-  }
-  if(rows.length && Array.isArray(rows[0].values && rows[0].values[0]))
-    mainWidth = Math.max(BASE_WIDTH, rows[0].values[0].length);
-  venues = rows.map((r, i) => rowToObj(r.values[0], r.index !== undefined ? r.index : i));
+function ingestVenues(rows){            // rows: [{ index, values }]
+  if(rows.length && Array.isArray(rows[0].values))
+    mainWidth = Math.max(BASE_WIDTH, rows[0].values.length);
+  venues = rows.map(r => rowToObj(r.values, r.index));
   applyPending();   // a delete or an add this read is too early to show
   buildLocCentroids();
 
@@ -687,46 +703,128 @@ async function loadAll(){
     (venuesByKey.get(k)  || venuesByKey.set(k, []).get(k)).push(v);
     (venuesByName.get(n) || venuesByName.set(n, []).get(n)).push(v);
   });
-
-  // Menu Details is a flat log of what has already been ordered / eaten:
-  // Venue | Location | Vendor | Section | Item
+}
+// Menu Details is a flat log of what has already been ordered / eaten:
+// Venue | Location | Vendor | Section | Item
+function ingestMenu(rows){
+  menuRows = rows.map(r => {
+    const v = r.values;
+    return {
+      index: r.index,
+      venue:   v[0]!=null ? String(v[0]) : '',
+      location:v[1]!=null ? String(v[1]) : '',
+      vendor:  v[2]!=null ? String(v[2]) : '',
+      section: v[3]!=null ? String(v[3]) : '',
+      item:    v[4]!=null ? String(v[4]) : ''
+    };
+  }).filter(r => r.venue);
+  // Attach each logged item to a specific venue row rather than to a bare
+  // name, so branches of the same chain no longer pool their menus.
+  menus = {};
+  orphanMenuRows = [];
+  menuRows.forEach(r => {
+    r.vkey = resolveMenuVenue(r);
+    if(!r.vkey){ orphanMenuRows.push(r); return; }
+    if(!menus[r.vkey]) menus[r.vkey] = {};
+    const sec = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
+    if(!menus[r.vkey][sec]) menus[r.vkey][sec] = [];
+    if(r.item) menus[r.vkey][sec].push(r.item);
+  });
+}
+async function readRows(sheet, table){   // every row of a table (paged)
+  let rows = [];
+  let next = `/worksheets('${encodeURIComponent(sheet)}')/tables('${table}')/rows`;
+  while(next){
+    const data = await graph('GET', next.startsWith('http') ? next.replace(graphFileBase(),'') : next);
+    rows = rows.concat(data.value);
+    next = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
+  }
+  return rows.map((r, i) => ({ index: r.index !== undefined ? r.index : i, values: r.values[0] }));
+}
+async function loadAll(){
+  const main = await readRows(MAIN_SHEET, MAIN_TABLE);
+  ingestVenues(main);
+  let menu = null;
   try{
-    let mrows = [];
-    let mnext = `/worksheets('${encodeURIComponent(MENU_SHEET)}')/tables('${MENU_TABLE}')/rows`;
-    while(mnext){
-      const data = await graph('GET', mnext.startsWith('http') ? mnext.replace(graphFileBase(),'') : mnext);
-      mrows = mrows.concat(data.value);
-      mnext = data['@odata.nextLink'] ? data['@odata.nextLink'] : null;
-    }
-    menuRows = mrows.map((r,i) => {
-      const v = r.values[0];
-      return {
-        index: r.index !== undefined ? r.index : i,
-        venue:   v[0]!=null ? String(v[0]) : '',
-        location:v[1]!=null ? String(v[1]) : '',
-        vendor:  v[2]!=null ? String(v[2]) : '',
-        section: v[3]!=null ? String(v[3]) : '',
-        item:    v[4]!=null ? String(v[4]) : ''
-      };
-    }).filter(r => r.venue);
-    // Attach each logged item to a specific venue row rather than to a bare
-    // name, so branches of the same chain no longer pool their menus.
-    menus = {};
-    orphanMenuRows = [];
-    menuRows.forEach(r => {
-      r.vkey = resolveMenuVenue(r);
-      if(!r.vkey){ orphanMenuRows.push(r); return; }
-      if(!menus[r.vkey]) menus[r.vkey] = {};
-      const sec = [r.vendor, r.section].filter(Boolean).join(' — ') || 'Other';
-      if(!menus[r.vkey][sec]) menus[r.vkey][sec] = [];
-      if(r.item) menus[r.vkey][sec].push(r.item);
-    });
+    menu = await readRows(MENU_SHEET, MENU_TABLE);
+    ingestMenu(menu);
   }catch(e){
     console.warn('menu load failed', e);
     menuRows = []; menus = {}; orphanMenuRows = [];
     window.__menuLoadError = e.message;
   }
   lastLoadAt = Date.now();
+  clearStale();                       // a read that worked ends read-only
+  if(menu) queueSnapshot(main, menu);
+}
+
+/* ====== The copy kept on this device ======
+   Every read that works is saved here, so a morning when Microsoft will not open
+   the workbook still shows the list - as it was, and read-only: nothing is written
+   from a saved copy, and the next read that works replaces it. */
+const SNAP_STORE = 'eatdrink.snapshot';
+let snapTimer = null;
+function queueSnapshot(main, menu){
+  clearTimeout(snapTimer);
+  snapTimer = setTimeout(() => {
+    try{
+      localStorage.setItem(SNAP_STORE, JSON.stringify({ at: Date.now(),
+        main: main.map(r => r.values), menu: menu.map(r => r.values) }));
+    }catch(e){ /* full or private mode: the app still works, just without the copy */ }
+  }, 300);
+}
+function readSnapshot(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SNAP_STORE) || 'null');
+    return s && Array.isArray(s.main) && s.main.length ? s : null;
+  }catch(e){ return null; }
+}
+function useSnapshot(){
+  const s = readSnapshot();
+  if(!s) return false;
+  ingestVenues(s.main.map((values, index) => ({ index, values })));
+  ingestMenu((s.menu || []).map((values, index) => ({ index, values })));
+  readOnly = { at: s.at };
+  return true;
+}
+function fmtWhen(ts){
+  const d = new Date(ts), now = new Date();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  return (d.toDateString() === now.toDateString() ? 'today' : d.toLocaleDateString([], { month: 'short', day: 'numeric' })) + ' ' + time;
+}
+const WAKE_FALLBACK = 'https://onedrive.live.com/';
+const WAKE_LINK = '<a id="wakeLink" target="_blank" rel="noopener" href="' + WAKE_FALLBACK + '">open the workbook in Excel</a>';
+async function setWakeLink(){   // point the link at the workbook itself; OneDrive answers even when Excel does not
+  try{
+    const token = await getToken();
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/drive/root:/' + encPath(FILE_PATH) + '?$select=webUrl',
+      { headers: { 'Authorization': 'Bearer ' + token } });
+    if(!res.ok) return;
+    const j = await res.json();
+    const a = document.getElementById('wakeLink');
+    if(a && j && /^https:\/\//.test(j.webUrl || '')) a.href = j.webUrl;
+  }catch(e){ /* the OneDrive front page still gets there */ }
+}
+function showStale(e){
+  const b = document.getElementById('staleBanner');
+  if(!b) return;
+  const saved = readOnly ? 'showing the list as saved ' + fmtWhen(readOnly.at) + ' — read-only. ' : '';
+  if(e && e.excelAsleep){
+    b.innerHTML = saved + 'Microsoft\'s Excel service has stopped answering for this account; the workbook itself is fine. ' +
+      WAKE_LINK + ', then come back and ' + (readOnly ? 'the list reloads.' : 'try again.');
+    setWakeLink();
+  } else {
+    b.textContent = saved + 'The workbook could not be read: ' + String((e && e.message) || e).slice(0, 180);
+  }
+  b.style.display = '';
+}
+function clearStale(){
+  const b = document.getElementById('staleBanner');
+  if(b) b.style.display = 'none';
+  if(!readOnly) return;
+  readOnly = null;
+  const fab = document.getElementById('addBtn');
+  if(fab && booted) fab.style.display = '';
 }
 
 /* ====== Coming back to an app that was left open ======
@@ -764,7 +862,7 @@ window.addEventListener('pageshow', refreshIfStale);
 window.addEventListener('focus', refreshIfStale);
 
 /* ====== UI ====== */
-let state = { query:'', category:'', ratings:new Set(), shown:60, near:null };
+let state = { query:'', category:'', ratings:new Set(), shown:60, near:null, nearRest:false };
 
 function haversine(a, b, c, d){
   const R = 3958.8, t = Math.PI/180;
@@ -809,6 +907,119 @@ function distOf(v){
 function fmtDist(d){
   if(d == null) return '';
   return d < 0.19 ? Math.round(d*5280) + ' ft' : d.toFixed(d<10?1:0) + ' mi';
+}
+/* A place is "placed" when the point is its own: a street address ('exact',
+   'verified') or the business itself on the map ('name'). 'zip', 'city' and a
+   borrowed town centre are not a position. Ranking those by distance put a few
+   hundred places on one point - 226 on the middle of San Francisco alone - in
+   sheet order, i.e. alphabetical, in the middle of a list that claimed to be by
+   distance. Nearest ranks placed rows only; the rest are counted and one tap away. */
+const PLACED_GEO = ['exact', 'verified', 'name'];
+function isPlaced(v){ return !!ownCoords(v) && PLACED_GEO.indexOf(String(v.geo || '').trim()) >= 0; }
+
+/* ====== Opening hours ======
+   The Hours column holds OpenStreetMap's opening_hours text
+   ("Mo-Fr 11:30-22:00; Sa,Su 10:00-22:00; Tu off"). parseHours() understands the
+   everyday part of that syntax - day lists and ranges, several spans a day, spans
+   that run past midnight, off/closed, 24/7 - and returns null for anything else
+   (months, weeks, sunrise, open-ended "17:00+"), in which case the text is shown
+   as written and no open/shut claim is made. The clock is always Pacific: the
+   list is the Bay Area wherever the phone happens to be. */
+const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function dayIx(d){ d = String(d || ''); return DAYS.indexOf(d.slice(0,1).toUpperCase() + d.slice(1,2).toLowerCase() + d.slice(2)); }
+function parseHours(text){
+  const s = String(text || '').trim();
+  if(!s) return null;
+  const week = DAYS.map(() => null);
+  for(const raw of s.split(';')){
+    const rule = raw.replace(/"[^"]*"/g, '').trim();
+    if(!rule) continue;
+    if(/^(PH|SH)\b/i.test(rule)) continue;                 // holidays: not modelled
+    let days = [0,1,2,3,4,5,6], rest = rule;
+    const dm = /^([A-Za-z]{2}(?:\s*[-,]\s*[A-Za-z]{2})*)\s*:?\s*(.*)$/.exec(rule);
+    if(dm && dm[1].split(/\s*[-,]\s*/).every(d => dayIx(d) >= 0 || /^PH$/i.test(d))){
+      rest = dm[2].trim();
+      days = [];
+      for(const part of dm[1].split(/\s*,\s*/)){
+        if(/^PH$/i.test(part)) continue;
+        const ends = part.split(/\s*-\s*/).map(dayIx);
+        if(ends.some(x => x < 0)) return null;
+        if(ends.length === 1) days.push(ends[0]);
+        else for(let d = ends[0], n = 0; n < 7; d = (d + 1) % 7, n++){ days.push(d); if(d === ends[1]) break; }
+      }
+    }
+    let spans = [];
+    if(/^(off|closed)$/i.test(rest)) spans = [];
+    else if(/^24\/7$/.test(rest) || /^00:00\s*-\s*24:00$/.test(rest)) spans = [[0, 1440]];
+    else {
+      if(!rest) return null;
+      for(const t of rest.split(/\s*,\s*/)){
+        const tm = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/.exec(t);
+        if(!tm) return null;
+        const a = +tm[1] * 60 + +tm[2];
+        let b = +tm[3] * 60 + +tm[4];
+        if(a >= 1440 || b > 1440 + 720) return null;
+        if(b <= a) b += 1440;                              // runs past midnight
+        spans.push([a, b]);
+      }
+    }
+    days.forEach(d => { week[d] = spans; });
+  }
+  if(week.every(d => d === null)) return null;
+  return week.map(d => d || []);                           // a day not mentioned is a day off
+}
+function pacificNow(when){
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(when || new Date());
+  const get = t => (parts.find(x => x.type === t) || {}).value || '';
+  return { day: DAYS.indexOf(get('weekday').slice(0, 2)), min: (+get('hour') % 24) * 60 + +get('minute') };
+}
+function hoursStatus(text, when){
+  const week = parseHours(text);
+  if(!week) return null;
+  const { day, min } = pacificNow(when);
+  if(day < 0) return null;
+  for(const sp of week[(day + 6) % 7])                     // last night's span, still running
+    if(sp[1] > 1440 && min < sp[1] - 1440) return { open: true, until: sp[1] - 1440 };
+  for(const sp of week[day])
+    if(min >= sp[0] && min < sp[1]) return { open: true, until: sp[1], allDay: sp[0] === 0 && sp[1] === 1440 };
+  for(let k = 0; k <= 7; k++){
+    const d = (day + k) % 7;
+    const next = week[d].map(sp => sp[0]).filter(a => k > 0 || a > min).sort((x, y) => x - y)[0];
+    if(next !== undefined) return { open: false, at: next, day: d, inDays: k };
+  }
+  return { open: false };
+}
+function fmtClock(m){
+  const h = Math.floor(m / 60) % 24, mm = m % 60;
+  return (h % 12 || 12) + (mm ? ':' + String(mm).padStart(2, '0') : '') + (h < 12 ? ' am' : ' pm');
+}
+/* "open until 10 pm" / "opens 5 pm" / "opens tomorrow 11 am" / "opens Tue 5 pm".
+   Never the word closed: in this app that means gone for good. */
+function hoursLabel(v, when){
+  if(isClosed(v)) return '';
+  const st = hoursStatus(v.hours, when);
+  if(!st) return '';
+  if(st.open) return st.allDay ? 'open 24 hours' : 'open until ' + fmtClock(st.until);
+  if(st.at === undefined) return '';
+  return 'opens ' + (st.inDays === 0 ? '' : st.inDays === 1 ? 'tomorrow ' : DAY_NAMES[st.day] + ' ') + fmtClock(st.at);
+}
+function hoursTag(v, when){
+  const label = hoursLabel(v, when);
+  return label ? '<span class="hrs' + (/^open/.test(label) ? ' open' : '') + '">' + label + '</span>' : '';
+}
+function hoursField(v){
+  const raw = String(v.hours || '').trim();
+  if(!raw || isClosed(v)) return '';
+  const week = parseHours(raw), label = hoursLabel(v);
+  const body = week
+    ? [1,2,3,4,5,6,0].map(d => '<div class="hrsrow"><span>' + DAY_NAMES[d] + '</span><span>' +
+        (week[d].length ? week[d].map(sp => fmtClock(sp[0]) + ' – ' + fmtClock(sp[1])).join(', ') : 'shut') +
+        '</span></div>').join('')
+    : '<div>' + escapeHtml(raw) + '</div>';
+  return '<div class="field"><label>Hours' + (label ? ' · ' + label : '') + '</label>' + body +
+         '<div class="hint">from OpenStreetMap — can be out of date</div></div>';
 }
 
 function matches(v){
@@ -940,16 +1151,30 @@ function render(){
     return;
   }
   let filtered = venues.filter(matches);
+  let byTown = false, placedN = 0, restN = 0;
   if(state.near){
-    filtered = filtered.filter(v => distOf(v) !== null)
-                       .sort((x,y) => distOf(x) - distOf(y));
+    filtered = filtered.filter(v => !isClosed(v));         // nearest is for going somewhere
+    const placed = filtered.filter(isPlaced);
+    const rest = filtered.filter(v => !isPlaced(v) && distOf(v) !== null);
+    placedN = placed.length; restN = rest.length;
+    byTown = !!restN && (state.nearRest || !placedN);
+    filtered = byTown
+      ? rest.sort((x,y) => (distOf(x) - distOf(y)) || String(x.name).localeCompare(String(y.name)))
+      : placed.sort((x,y) => distOf(x) - distOf(y));
   }
+  const now = new Date();
   list.innerHTML = '';
   const toShow = filtered.slice(0, state.shown);
   document.getElementById('resultCount').textContent = filtered.length + ' result' + (filtered.length===1?'':'s');
   syncNearUI();
   const gn = document.getElementById('geoNote');
-  gn.style.display = (state.near && filtered.slice(0,state.shown).some(isApproxGeo)) ? '' : 'none';
+  gn.style.display = (state.near && restN) ? '' : 'none';
+  if(state.near && restN){
+    gn.innerHTML = byTown
+      ? 'no street address yet — by town, nearest town first' +
+        (placedN ? ' · <span class="nearfix" id="restToggle" role="button">back to nearest</span>' : '')
+      : restN + ' more with no street address, not ranked · <span class="nearfix" id="restToggle" role="button">list them</span>';
+  }
   toShow.forEach(v => {
     const el = document.createElement('div');
     el.className = 'item' + (isClosed(v) ? ' closed' : '');
@@ -959,7 +1184,7 @@ function render(){
         ${hasMenu(v) ? `<span class="flag ${(v.rating||'').trim() ? 'ok' : 'warn'}" title="${(v.rating||'').trim() ? 'menu details recorded' : 'menu details but no rating'}">\u2713</span>` : ''}
         ${(v.rating||'').trim() ? `<div class="badge ${ratingBadgeClass(v.rating)}">${escapeHtml(v.rating.trim())}</div>` : ''}
       </div>
-      <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${state.near ? `<span class="dist">${fmtDist(distOf(v))}${isApproxGeo(v)?'*':''}</span>` : ''}</div>
+      <div class="item-sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${state.near ? `<span class="dist">${byTown ? 'town centre ' : ''}${fmtDist(distOf(v))}</span>` : ''}${hoursTag(v, now)}</div>
       ${v.toOrder ? `<div class="toorder"><span class="tolabel">To Order:</span> ${splitItems(v.toOrder).map(x => wantHtmlFor(x, v)).join(', ')}</div>` : ''}
     `;
     el.addEventListener('click', () => openDetail(v));
@@ -985,6 +1210,10 @@ document.getElementById('searchBox').addEventListener('keydown', e => {
   else if(e.key === 'Escape'){
     e.target.value = ''; state.query = ''; state.shown = 60; render(); e.target.blur();
   }
+});
+document.getElementById('geoNote').addEventListener('click', e => {
+  if(!e.target || e.target.id !== 'restToggle') return;
+  state.nearRest = !state.nearRest; state.shown = 40; render();
 });
 document.getElementById('categorySelect').addEventListener('change', e => { state.category = e.target.value; state.shown=60; syncCategoryUI(); render(); });
 document.getElementById('catClear').addEventListener('click', clearCategory);
@@ -1030,6 +1259,7 @@ async function nameNear(){
 }
 function setNear(near){
   state.near = near;
+  state.nearRest = false;
   const chip = document.getElementById('nearChip');
   chip.classList.add('active'); chip.textContent = 'nearest';
   state.shown = 40; render();
@@ -1038,7 +1268,7 @@ function setNear(near){
 }
 document.getElementById('nearChip').addEventListener('click', () => {
   const chip = document.getElementById('nearChip');
-  if(state.near){ state.near=null; chip.classList.remove('active'); chip.textContent='nearest'; state.shown=60; render(); return; }
+  if(state.near){ state.near=null; state.nearRest=false; chip.classList.remove('active'); chip.textContent='nearest'; state.shown=60; render(); return; }
   if(!navigator.geolocation){
     document.getElementById('nearSet').style.display = '';
     document.getElementById('nearInput').focus();
@@ -1094,7 +1324,7 @@ document.getElementById('diceChip').addEventListener('click', () => {
 
 
 document.getElementById('clearAllBtn').addEventListener('click', () => {
-  state.query=''; state.category=''; state.ratings.clear(); state.near=null; state.shown=60;
+  state.query=''; state.category=''; state.ratings.clear(); state.near=null; state.nearRest=false; state.shown=60;
   document.getElementById('searchBox').value='';
   document.getElementById('categorySelect').value='';
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
@@ -1138,6 +1368,7 @@ function openDetail(v){
     <h2 class="${shut ? 'closed' : ''}">${escapeHtml(v.name||'')}${closedTag(v)}</h2>
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${isChain(v)?' · chain':''}</div>
     ${shut ? `<div class="closedline">${escapeHtml(closedNote(v))} — this entry is kept as a record and cannot be edited</div>` : ''}
+    ${hoursField(v)}
     ${ratingHtml}
     ${wantShown}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
@@ -1338,7 +1569,9 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     toOrder: document.getElementById('f_toOrder').value.trim(),
     notes: document.getElementById('f_notes').value.trim(),
     hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : '',
-    chain: editingVenue ? (editingVenue.chain||'') : ''   // never blank an existing flag
+    chain: editingVenue ? (editingVenue.chain||'') : '',  // never blank an existing flag
+    closed: editingVenue ? (editingVenue.closed||'') : '',
+    hours: editingVenue ? (editingVenue.hours||'') : ''
   };
   if(!rec.name){ alert('Enter a name.'); return; }
   // a new or changed address makes the old point wrong: drop it, and nearest
@@ -1893,6 +2126,11 @@ async function ensureClosedColumn(){
   if(!await ensureChainColumn()) return false;
   return ensureColumn(CLOSED_COL);
 }
+async function ensureHoursColumn(){
+  if(hasHoursCol()) return true;
+  if(!await ensureClosedColumn()) return false;
+  return ensureColumn(HOURS_COL);
+}
 /* Mark every row of these names as a chain. Returns how many rows changed. */
 async function markChains(names){
   const want = new Set(names.map(normTxt).filter(Boolean));
@@ -2360,7 +2598,12 @@ async function withBusy(fn){
     await fn();
   }catch(e){
     console.error(e);
-    alert(e && e.userFacing ? e.message : 'Something went wrong talking to OneDrive: ' + e.message);
+    if(e && e.excelAsleep){
+      showStale(e);
+      alert('Microsoft\'s Excel service has stopped answering for this account. Open the workbook in Excel once (the link at the top), then try again.');
+    } else {
+      alert(e && e.userFacing ? e.message : 'Something went wrong talking to OneDrive: ' + e.message);
+    }
   }finally{
     fab.disabled = false;
   }
@@ -2383,25 +2626,55 @@ async function init(){
     return;
   }
   account = accounts[0];
+  await startApp();
+}
+let gateAsleep = false, starting = false;
+async function startApp(){
+  if(starting) return;
+  starting = true;
+  gateAsleep = false;
   showLoading();
   try{
     await loadAll();
-    populateCategories();
-    render();
-    if(window.__menuLoadError){
-      const b = document.getElementById('menuWarnBanner');
-      b.textContent = 'Menu data did not load: ' + window.__menuLoadError;
-      b.style.display = '';
-    }
-    document.getElementById('gate').style.display = 'none';
-    document.getElementById('appHeader').style.display = '';
-    document.getElementById('addBtn').style.display = '';
-    booted = true;
+    enterApp();
   }catch(e){
     console.error(e);
-    showGateError('Could not load your file: ' + e.message);
+    if(useSnapshot()){ enterApp(); showStale(e); }       // the list as last saved, read-only
+    else if(e.excelAsleep) showAsleepGate();
+    else showGateError('Could not load your file: ' + e.message);
+  }finally{
+    starting = false;
   }
 }
+function enterApp(){
+  populateCategories();
+  render();
+  if(window.__menuLoadError){
+    const b = document.getElementById('menuWarnBanner');
+    b.textContent = 'Menu data did not load: ' + window.__menuLoadError;
+    b.style.display = '';
+  }
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('appHeader').style.display = '';
+  document.getElementById('addBtn').style.display = readOnly ? 'none' : '';
+  booted = true;
+}
+/* No saved copy on this device and Excel is asleep: say so, and offer the one
+   thing that wakes it. Coming back to the page tries again by itself. */
+function showAsleepGate(){
+  gateAsleep = true;
+  document.getElementById('gateInner').innerHTML = `
+    <h2>eat + drink</h2>
+    <p>Microsoft's Excel service has stopped answering for this account. The workbook itself is fine. Open it in Excel once, then come back here.</p>
+    <p>${WAKE_LINK}</p>
+    <button class="btn primary" id="retryBtn" style="flex:none;padding:12px 24px;">try again</button>
+  `;
+  document.getElementById('retryBtn').addEventListener('click', startApp);
+  setWakeLink();
+}
+function retryIfAsleep(){ if(gateAsleep && !document.hidden) startApp(); }
+document.addEventListener('visibilitychange', retryIfAsleep);
+window.addEventListener('focus', retryIfAsleep);
 
 function showSignInButton(){
   document.getElementById('gateInner').innerHTML = `
@@ -2448,13 +2721,15 @@ function findDataIssues(){
   const falseFlags = liveVenues().filter(v => (v.hasMenuDetail||'').trim() === 'x' && !logged.has(vKey(v)));
   const missingFlags = liveVenues().filter(v => (v.hasMenuDetail||'').trim() !== 'x' && logged.has(vKey(v)));
   const noGeo = liveVenues().filter(v => !v.lat || !v.lng);
+  const unplaced = liveVenues().filter(v => !isClosed(v) && !isChain(v) && !isPlaced(v));
+  const withHours = liveVenues().filter(v => !isClosed(v) && String(v.hours || '').trim());
   const unchained = unmarkedChainRows();
   const dupeGroups = duplicateGroups();
   const umbrellas = chainUmbrellaRows();
   const strays = strayLogRows();
   const noAddress = noAddressRows();
   const lookups = lookupRows();
-  return { dupes, falseFlags, missingFlags, noGeo, unchained, dupeGroups, umbrellas, strays, noAddress, lookups };
+  return { dupes, falseFlags, missingFlags, noGeo, unplaced, withHours, unchained, dupeGroups, umbrellas, strays, noAddress, lookups };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -2478,7 +2753,8 @@ function renderDiag(){
     line(d.missingFlags.length, 'Logged but not flagged', sample(d.missingFlags)) +
     line(d.noAddress.length, 'No address',
          d.noAddress.length ? addressDetail(d) : '') +
-    line(d.noGeo.length, 'Missing coordinates', d.noGeo.length ? 'placed at their town\'s centre in nearest' : '') +
+    line(d.unplaced.length, 'Not placed', d.unplaced.length ? 'no street point — left out of the nearest ranking, listed by town instead' : '') +
+    line(d.withHours.length, 'Have hours', 'of ' + liveVenues().filter(v => !isClosed(v)).length + ' open places') +
     line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained)) +
     line(venues.filter(isClosed).length, 'Marked closed', 'kept on the list, in red, read-only');
   const btn = document.getElementById('diagFixFlags');
@@ -2728,6 +3004,145 @@ document.getElementById('diagLookup').addEventListener('click', async () => {
            missed ? missed + ' not found online (listed in the data check)' : ''].filter(Boolean).join(', ') + '.');
   });
   renderDiag();
+});
+
+/* ====== HOURS (and a point for places that have none) ======
+   One question to OpenStreetMap (Overpass) for every named food and drink place
+   in the nine counties, matched to the list here - not one request per row.
+
+   - a placed row takes the hours of the OSM place of the same name within about
+     600 ft of it, or of the only place within about 250 ft whose name starts
+     with this one or the other way round ("Tartine" / "Tartine Bakery");
+   - a row with no street point is matched only when its name exists exactly once
+     on the whole map and that one is within 6 miles of the row's town: it gets
+     the point (Geo Precision 'name'), the street address when OSM has one, and
+     the hours. That is what moves a row out of "not placed".
+
+   Chains without a point, closed rows and rows still pending are skipped. Hours
+   longer than 250 characters are left out. Every write reads the row back first. */
+const OVERPASS_HOSTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
+                        'https://overpass.private.coffee/api/interpreter'];
+const HOME_BOX = [36.85, -123.65, 38.90, -121.20];   // the nine counties, south-west-north-east
+const FOOD_AMENITY = 'restaurant|cafe|bar|pub|fast_food|ice_cream|food_court|biergarten|nightclub';
+const FOOD_SHOP = 'bakery|coffee|confectionery|deli|pastry|butcher|cheese|chocolate|wine|alcohol|tea|convenience|supermarket|greengrocer|seafood|farm|beverages';
+async function fetchOsmFood(){
+  const bb = '(' + HOME_BOX.join(',') + ')';
+  const q = '[out:json][timeout:180];(nwr["name"]["amenity"~"^(' + FOOD_AMENITY + ')$"]' + bb +
+            ';nwr["name"]["shop"~"^(' + FOOD_SHOP + ')$"]' + bb + ';);out center tags;';
+  let last = null;
+  for(const host of OVERPASS_HOSTS){
+    try{
+      const res = await fetch(host, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(q) });
+      if(!res.ok){ last = new Error('http ' + res.status); continue; }
+      const j = await res.json();
+      if(j && Array.isArray(j.elements)) return j.elements;
+      last = new Error('no data');
+    }catch(e){ last = e; }
+  }
+  const e = new Error('OpenStreetMap did not answer (' + (last ? last.message : 'no reply') + '). Nothing was changed.');
+  e.userFacing = true;
+  throw e;
+}
+/* a place name for matching: case, accents and punctuation aside, nothing dropped -
+   itemKey() strips a leading count, which would turn "20 Spot" into "spot" */
+function placeKey(s){
+  return normTxt(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function osmPlaces(elements){
+  return (elements || []).map(el => {
+    const t = el.tags || {};
+    return { key: placeKey(t.name || ''),
+      lat: el.lat !== undefined ? el.lat : (el.center && el.center.lat),
+      lng: el.lon !== undefined ? el.lon : (el.center && el.center.lon),
+      hours: String(t.opening_hours || '').trim(),
+      num: String(t['addr:housenumber'] || '').trim(), street: String(t['addr:street'] || '').trim(),
+      zip: String(t['addr:postcode'] || '').trim() };
+  }).filter(p => p.key && typeof p.lat === 'number' && typeof p.lng === 'number');
+}
+function osmIndex(places){
+  const byKey = new Map();
+  places.forEach(p => { (byKey.get(p.key) || byKey.set(p.key, []).get(p.key)).push(p); });
+  return byKey;
+}
+function matchOsm(v, places, byKey){
+  if(v.pending || isClosed(v)) return null;
+  const same = byKey.get(placeKey(v.name)) || [];
+  const c = ownCoords(v);
+  if(c && isPlaced(v)){
+    const dist = p => haversine(c.lat, c.lng, p.lat, p.lng);
+    const hit = same.filter(p => dist(p) < 0.12).sort((x, y) => dist(x) - dist(y))[0];
+    if(hit) return { place: hit };
+    // on the same doorstep, one name may be the start of the other ("Tartine" /
+    // "Tartine Bakery", "The Laureate" / "Laureate"). Sharing a word is not enough:
+    // "Thai House" is not "Lers Ros Thai" however close they stand.
+    const bare = k => k.replace(/^the /, '');
+    const mine = bare(placeKey(v.name));
+    if(!mine) return null;
+    const door = places.filter(p => {
+      if(Math.abs(p.lat - c.lat) > 0.001 || Math.abs(p.lng - c.lng) > 0.0013 || dist(p) >= 0.05) return false;
+      const theirs = bare(p.key);
+      return !!theirs && ((theirs + ' ').indexOf(mine + ' ') === 0 || (mine + ' ').indexOf(theirs + ' ') === 0);
+    });
+    return door.length === 1 ? { place: door[0] } : null;
+  }
+  if(isChain(v) || isPseudoLocation(v.location)) return null;
+  const town = locCentroids.get(normTxt(v.location || ''));
+  if(!town || same.length !== 1) return null;
+  if(haversine(town.lat, town.lng, same[0].lat, same[0].lng) > 6) return null;
+  return { place: same[0], move: true };
+}
+function osmChanges(v, m){   // what this match would change on the row as it stands
+  const ch = {}, p = m.place;
+  if(p.hours && p.hours.length <= 250 && p.hours !== String(v.hours || '').trim()) ch.hours = p.hours;
+  if(m.move && !isPlaced(v)){
+    ch.lat = +p.lat.toFixed(6); ch.lng = +p.lng.toFixed(6); ch.geo = 'name';
+    if(p.num && p.street && !String(v.address || '').trim())
+      ch.address = p.num + ' ' + p.street + (v.location ? ', ' + v.location : '') + (p.zip ? ' ' + p.zip : '');
+  }
+  return ch;
+}
+let hoursRun = null;
+document.getElementById('diagHours').addEventListener('click', async () => {
+  if(hoursRun){ hoursRun.stop = true; return; }          // the button is "stop" while it runs
+  const btn = document.getElementById('diagHours');
+  await withBusy(async () => {
+    if(!confirm('Look up opening hours on OpenStreetMap for every place on the list? ' +
+                'It asks once for the whole Bay Area (a minute or two), then writes what it finds. ' +
+                'Keep this page open; tap the button again to stop.')) return;
+    hoursRun = { stop: false };
+    let hrs = 0, moved = 0;
+    try{
+      btn.textContent = 'asking OpenStreetMap…';
+      const places = osmPlaces(await fetchOsmFood());
+      const byKey = osmIndex(places);
+      if(!await ensureHoursColumn()) return;
+      await loadAll();
+      const todo = liveVenues().map(v => [v, matchOsm(v, places, byKey)])
+        .filter(x => x[1] && Object.keys(osmChanges(x[0], x[1])).length);
+      let done = 0;
+      for(const [v, m] of todo){
+        if(hoursRun.stop) break;
+        btn.textContent = 'writing ' + (++done) + ' of ' + todo.length + ' — tap to stop';
+        const cur = await liveRow(v);
+        if(!cur || isClosed(cur)) continue;
+        const ch = osmChanges(cur, m);
+        if(!Object.keys(ch).length) continue;
+        const rec = Object.assign({}, cur, ch);
+        delete rec.index;
+        await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
+        if(ch.hours) hrs++;
+        if(ch.geo) moved++;
+      }
+    } finally {
+      hoursRun = null;
+      btn.textContent = 'Look up hours';
+    }
+    await loadAll(); populateCategories(); render(); renderDiag();
+    alert('Hours written for ' + hrs + ' place' + (hrs === 1 ? '' : 's') +
+          (moved ? ', and ' + moved + ' placed on the map' : '') + '.');
+  });
 });
 
 async function checkVersion(){

@@ -19,7 +19,10 @@ Single-file web app for a personal food/drink list. `index.html` is the whole ap
 
 `Food + Drink.xlsx`, table **FoodDrinkTable** on sheet **Food + Drink**:
 
-`Name | Category | Location | To Order | Rating | Notes | Has Menu Detail | Address | Lat | Lng | Geo Precision | Chain`
+`Name | Category | Location | To Order | Rating | Notes | Has Menu Detail | Address | Lat | Lng | Geo Precision | Chain | Closed | Hours`
+
+`Hours` (14th, added through Graph by the app the first time hours are looked up) holds
+OpenStreetMap `opening_hours` text. See *Excel asleep, nearest, hours (2026.11.12-1)*.
 
 **Never widen a table's `ref` in openpyxl without adding the matching `tableColumn`
 entries.** Setting `ws.tables['FoodDrinkTable'].ref` to `A1:M…` while `xl/tables/table1.xml`
@@ -585,3 +588,99 @@ lookup per chain (Nominatim, bounded to the Bay Area box), nearest showing each 
 closest branch. Alternatives: live lookup per nearest tap (slow: one request per chain per second),
 Overpass `brand:wikidata` in one query (fast, but overpass-api.de has been answering some browser
 requests with 406 and no CORS header — could not be tested from the session).
+
+## Excel asleep, nearest, hours (2026.11.12-1)
+
+### "Could not load your file … 401 FileOpenUserUnauthorized" — Microsoft, not the app
+
+On 2026-11-12 every `/workbook` call returned
+`401 FileOpenUserUnauthorized — You do not have permissions to open this file in the browser`.
+What was checked, in the live page: the token was good; `GET /me/drive/root:/…/Food + Drink.xlsx`
+returned 200 (195 KB, modified two days earlier); quota normal; `v1.0` and `beta` both 401; and
+**`Out of Town.xlsx` got the same 401** — so it is the account's Excel service, not this
+workbook or this app. Microsoft's Excel (WAC) back end stops answering for some personal
+accounts; it is a long-standing, unresolved fault on their side (OfficeDev/office-js#4506,
+microsoftgraph/microsoft-graph-explorer-v4#3014), and Microsoft's position there is that Excel
+on consumer OneDrive is not properly supported.
+
+**What clears it: open any workbook once in Excel for the web.** The drive item's `webUrl`
+(`onedrive.live.com/…/doc.aspx?resid=…`) was opened in a browser tab, and within seconds
+both workbooks answered 200 again and kept answering after the tab was closed. Expect it to
+come back; forum reports have it recurring daily for some accounts.
+
+Do **not** look for the cause in the workbook (a broken table gives `501 FileCorruptTryRepair`,
+not 401), in the sign-in, or in permissions/consent. And the file cannot be read around Excel
+from the browser: `/content` and `@microsoft.graph.downloadUrl` both land on
+`my.microsoftpersonalcontent.com`, which sends no CORS header.
+
+What the app does about it now:
+
+- `graph()` marks that response `excelAsleep`.
+- **Every read that works is saved on the device** (`eatdrink.snapshot` in `localStorage`:
+  the raw rows of both tables, written 300 ms after `loadAll()`). When a start-up read fails
+  for any reason and a copy exists, `useSnapshot()` shows it **read-only**: `readOnly` is set,
+  the `+` is hidden, `graph()` refuses every non-GET before it reaches Microsoft, and
+  `#staleBanner` says when the copy was saved and — for the asleep case — carries
+  *open the workbook in Excel* (`setWakeLink()` points it at the workbook's own `webUrl`).
+  Coming back to the page re-reads (`refreshIfStale`), and the first read that works calls
+  `clearStale()`: banner gone, `+` back.
+- No saved copy yet (a new device): `showAsleepGate()` says what is wrong in one sentence with
+  the same link, and `retryIfAsleep()` tries again when the page regains focus.
+- A write that hits a sleeping Excel while the list is live gets a plain alert and the same
+  banner; the list stays as it is.
+
+The out-of-town app has the same exposure and none of this yet.
+
+### Nearest ranks only places that have a point of their own
+
+The complaint was "still just zip code level in alphabetical order". The top of the list
+from Presidio Heights was in fact street-level (1651 rows are `exact`), but **226 rows sat on
+one point in the middle of San Francisco** (`city`), 32 on ZIP centroids, and every row with no
+coordinates borrowed its town's centre — another ~100 on one point for SF. `Array.sort` is
+stable, so each clump came out in sheet order, i.e. alphabetical, and anyone standing near the
+Mission saw a couple of hundred alphabetical rows *first*.
+
+- `isPlaced(v)`: own coordinates **and** Geo Precision `exact`, `verified` or `name`.
+- `render()` with `state.near`: placed rows only, by distance. The rest are counted in
+  `#geoNote` — *N more with no street address, not ranked · list them* — and `state.nearRest`
+  shows them instead, by town (distance labelled *town centre*), then by name. If a search
+  matches only unplaced rows they are shown straight away.
+- The asterisk and *approximate — refines as you use it* are gone. `refineNearby()` is unchanged
+  and still upgrades the closest unplaced rows a dozen at a time.
+- **Closed places are left out of nearest altogether** (they were listed, in red). Nothing else
+  about closed rows changed: still never deleted, still shown in search as records.
+
+Not placed as of 2026-11-12: 281 `city`, 32 `zip`, 253 with no coordinates (133 of those have
+no Location — chains, by design). The fix for a row is an address: the data check's
+*Look up addresses* (Nominatim, per row) or *Look up hours* below (places unique names).
+
+### Hours
+
+`Hours` holds OSM `opening_hours` text. `parseHours()` handles day lists and ranges, several
+spans a day, spans past midnight, `off`/`closed`, `24/7`; anything else (months, weeks,
+sunrise, `17:00+`) returns null, the detail sheet shows the text as written and no open/shut
+claim is made. The clock is always `America/Los_Angeles` (`pacificNow()`), not the device's.
+
+- List rows (search and nearest): `open until 10 pm` (green) / `opens 5 pm` /
+  `opens tomorrow 11 am` / `opens Tue 5:30 pm`. **Never the word "closed"** — in this app that
+  means gone for good. Detail sheet: the week, Mon–Sun, *shut* for a day off.
+- The edit form's literal record now carries `closed` and `hours` (it would have blanked them).
+- Data check ▸ **Look up hours**: one Overpass request for every named food/drink place in the
+  nine-county box (`HOME_BOX`), matched locally (`matchOsm`): same name (`placeKey`, which
+  unlike `itemKey` does not drop a leading number — "20 Spot" is not "Spot") within ~600 ft of
+  a placed row; or the only place within ~250 ft whose name starts with the row's or vice
+  versa. Sharing a word is not a match (the test case is *Thai House* / *Lers Ros Thai*).
+  A row with no point is matched only to a name that exists once on the whole map, within 6 mi
+  of its town: it gets the point (`name`), the address if OSM has one, and the hours.
+  Each write reads the row back first (`liveRow`), as the address lookup does.
+
+**OSM is a partial source.** Measured on the San Francisco rows on 2026-11-12: OSM had 4,706
+named food/drink places, 2,195 of them with hours; of 1,134 placed open non-chain SF rows,
+556 matched by exact name and 321 of those had hours. Roughly a third of the list gets hours
+this way, and OSM hours can be stale. **It cannot say a place has shut for good** — OSM
+simply drops or retags those. Google's Places API (New) has both (`regularOpeningHours`,
+`businessStatus: CLOSED_PERMANENTLY`) and would cover nearly everything, but it needs the
+user's own API key and billing account; put to the user on 2026-11-12, nothing built.
+
+Tests: `app({ asleep, snapshot, osm })` in `tests/smoke.mjs` model the 401, the saved copy and
+Overpass. 120 checks.

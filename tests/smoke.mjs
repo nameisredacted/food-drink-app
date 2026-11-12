@@ -19,14 +19,19 @@ const VERSION = (/const APP_VERSION = "([^"]+)"/.exec(html) || [])[1] || 'test';
 /* `geocode(q)` answers the place lookup (null = no match); `fix` is what the
    browser's geolocation returns - an array is tried in turn, a number is an
    error code. Every lookup lands in state.geocoded. */
-function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = null } = {}){
-  const state = { venues: venues.map(r => r.slice()), menu: menu.map(r => r.slice()), calls: [], geocoded: [], fixOpts: [] };
+/* `asleep` makes every workbook call answer the way Microsoft's Excel service does
+   when it has stopped answering for the account (state.asleep can be flipped back);
+   `snapshot` seeds the copy the app keeps on the device; `osm` is what Overpass
+   returns (null = it does not answer). */
+function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = null, asleep = false, snapshot = null, osm = null } = {}){
+  const state = { venues: venues.map(r => r.slice()), menu: menu.map(r => r.slice()), calls: [], geocoded: [], fixOpts: [], asleep, osmAsked: 0 };
   let snapV = state.venues.map(r => r.slice()), snapM = state.menu.map(r => r.slice()), lag = 0;
   const rows = v => ({ value: v.map((r, i) => ({ index: i, values: [r] })) });
   const dom = new JSDOM(html, {
     runScripts: 'dangerously',
     url: 'https://nameisredacted.github.io/food-drink-app/',
     beforeParse(w){
+      if(snapshot) w.localStorage.setItem('eatdrink.snapshot', JSON.stringify(snapshot));
       w.msal = { PublicClientApplication: class {
         async initialize(){} async handleRedirectPromise(){ return null; }
         getAllAccounts(){ return [{ username: 'test' }]; }
@@ -41,6 +46,16 @@ function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = nu
           state.geocoded.push(q);
           const hit = geocode(q);
           return { ok: true, status: 200, async json(){ return hit ? [hit] : []; } };
+        }
+        if(u.includes('/api/interpreter')){
+          state.osmAsked++;
+          return { ok: !!osm, status: osm ? 200 : 504, async json(){ return { elements: osm }; } };
+        }
+        if(u.includes('/me/drive/root:') && !u.includes(':/workbook'))   // the drive item, not the workbook
+          return { ok: true, status: 200, async json(){ return { webUrl: 'https://onedrive.live.com/the-workbook' }; } };
+        if(state.asleep){
+          const body = '{"error":{"code":"FileOpenUserUnauthorized","message":"You do not have permissions to open this file in the browser."}}';
+          return { ok: false, status: 401, async text(){ return body; }, async json(){ return JSON.parse(body); } };
         }
         const isMenu = u.includes('MenuDetails');
         if(m !== 'GET'){
@@ -656,12 +671,26 @@ const check = (name, fn) => {
     if(a.state.fixOpts[1].enableHighAccuracy !== false) throw new Error('second try still high accuracy');
     if(!a.w.eval('!!state.near')) throw new Error('no position set');
   });
-  check('nearest: a place with no coordinates still lists, marked approximate', () => {
-    const t = a.$('list').textContent;
-    if(!/Che Fico/.test(t)) throw new Error('missing: ' + t);
-    if(/Wild Crumb/.test(t)) throw new Error('listed a place with nothing to place it by');
-    const item = [...a.$('list').querySelectorAll('.item')].find(e => /Che Fico/.test(e.textContent));
-    if(!/\*/.test(item.querySelector('.dist').textContent)) throw new Error('no approximate mark');
+  const names = () => [...a.$('list').querySelectorAll('.item-name')].map(e => e.textContent.trim());
+  check('nearest: only places with a point of their own are ranked', () => {
+    if(names().join('|') !== 'Nopa') throw new Error(names().join('|'));
+  });
+  check('nearest: the rest are counted, not put on a town centre', () => {
+    if(!/^3 more with no street address, not ranked/.test(a.$('geoNote').textContent)) throw new Error(a.$('geoNote').textContent);
+  });
+  a.click(a.$('restToggle'));
+  check('nearest: "list them" shows the unplaced ones by town, and says so', () => {
+    const n = names();
+    if(n.includes('Nopa') || !n.includes('Che Fico') || !n.includes('Zuni Cafe')) throw new Error(n.join('|'));
+    if(n.includes('Wild Crumb')) throw new Error('listed a place with nothing to place it by');
+    if(!/town centre/.test(a.$('list').querySelector('.dist').textContent)) throw new Error('distance not marked as the town\'s');
+    if(!/back to nearest/.test(a.$('geoNote').textContent)) throw new Error(a.$('geoNote').textContent);
+  });
+  check('nearest: a closed place is in neither list', () => {
+    if(names().includes('Gone')) throw new Error('closed place listed');
+    a.click(a.$('restToggle'));
+    if(names().includes('Gone')) throw new Error('closed place ranked');
+    if(names().join('|') !== 'Nopa') throw new Error('did not go back: ' + names().join('|'));
   });
 
   await a.settle(4000);   // the lookups are spaced a second apart
@@ -682,9 +711,10 @@ const check = (name, fn) => {
     if(z[8] !== 37.7736 || z[10] !== 'exact') throw new Error('Zuni ' + z.slice(8, 11));
     if(c[8] !== 37.7765 || c[10] !== 'name') throw new Error('Che Fico ' + c.slice(8, 11));
   });
-  check('refine: a refined exact place loses its mark', () => {
-    const item = [...a.$('list').querySelectorAll('.item')].find(e => /Zuni/.test(e.textContent));
-    if(/\*/.test(item.querySelector('.dist').textContent)) throw new Error('still marked');
+  check('refine: a place that gets a point joins the ranking', () => {
+    const n = names();
+    if(!n.includes('Zuni Cafe') || !n.includes('Che Fico')) throw new Error(n.join('|'));
+    if(!/^1 more with no street address/.test(a.$('geoNote').textContent)) throw new Error(a.$('geoNote').textContent);
   });
 }
 {
@@ -839,6 +869,210 @@ const check = (name, fn) => {
   check('form: the address is saved', () => {
     const r = row('Mystery Spot');
     if(r[7] !== '1 Market St, San Francisco, CA' || r[8] !== '' || r[10] !== '') throw new Error(r.join('|'));
+  });
+}
+
+/* ---------- opening hours (2026.11.12-1) ---------- */
+{
+  const a = app({ venues: [V.zuni] });
+  await a.settle(300);
+  const label = (hours, iso, closed = '') =>
+    a.w.eval(`hoursLabel({ hours: ${JSON.stringify(hours)}, closed: ${JSON.stringify(closed)} }, new Date(${JSON.stringify(iso)}))`);
+  const expect = (name, got, want) => check(name, () => { if(got !== want) throw new Error(JSON.stringify(got)); });
+  // 2026-11-12 is a Thursday; Pacific is UTC-8 in November
+  expect('hours: open, with the closing time', label('Mo-Fr 11:30-22:00; Sa,Su 10:00-22:00', '2026-11-12T23:00:00Z'), 'open until 10 pm');
+  expect('hours: shut for the night, opens tomorrow', label('Mo-Fr 11:30-22:00; Sa,Su 10:00-22:00', '2026-11-13T07:00:00Z'), 'opens tomorrow 11:30 am');
+  expect('hours: later today', label('Mo-Fr 11:30-14:00,17:00-22:00', '2026-11-12T23:00:00Z'), 'opens 5 pm');
+  expect('hours: a span past midnight is still open after it', label('Mo-Su 17:00-02:00', '2026-11-13T09:30:00Z'), 'open until 2 am');
+  expect('hours: a day off is skipped to the next opening', label('Tu-Sa 17:30-22:00', '2026-11-15T20:00:00Z'), 'opens Tue 5:30 pm');
+  expect('hours: a later rule replaces an earlier one', label('Mo-Su 10:00-22:00; Th off', '2026-11-12T23:00:00Z'), 'opens tomorrow 10 am');
+  expect('hours: 24/7', label('24/7', '2026-11-12T23:00:00Z'), 'open 24 hours');
+  expect('hours: the clock is Pacific wherever the device is', label('Mo-Su 08:00-15:30', '2026-11-12T23:20:00Z'), 'open until 3:30 pm');
+  expect('hours: syntax it does not understand makes no claim', label('Apr-Oct: Mo-Su 10:00-18:00', '2026-11-12T23:00:00Z'), '');
+  expect('hours: nothing stored, nothing said', label('', '2026-11-12T23:00:00Z'), '');
+  expect('hours: a closed place has no hours line', label('24/7', '2026-11-12T23:00:00Z', 'closed 2026'), '');
+}
+
+/* ---------- Excel asleep: no saved copy ---------- */
+{
+  const a = app({ venues: [V.zuni], asleep: true });
+  await a.settle(400);
+  check('asleep: the gate says what is wrong, not a raw Graph error', () => {
+    const t = a.$('gateInner').textContent;
+    if(a.$('gate').style.display === 'none') throw new Error('gate gone');
+    if(!/Excel service has stopped answering/.test(t)) throw new Error(t);
+    if(/FileOpenUserUnauthorized|Graph GET/.test(t)) throw new Error('raw error shown: ' + t);
+  });
+  check('asleep: the link opens the workbook itself', () => {
+    if(a.$('wakeLink').href !== 'https://onedrive.live.com/the-workbook') throw new Error(a.$('wakeLink').href);
+    if(a.$('wakeLink').target !== '_blank') throw new Error('would navigate away from the app');
+  });
+  a.state.asleep = false;
+  Object.defineProperty(a.w.document, 'visibilityState', { get: () => 'visible', configurable: true });
+  Object.defineProperty(a.w.document, 'hidden', { get: () => false, configurable: true });
+  a.w.dispatchEvent(new a.w.Event('focus'));      // coming back from Excel
+  await a.settle(400);
+  check('asleep: coming back to the page loads the list by itself', () => {
+    if(a.$('gate').style.display !== 'none') throw new Error('still gated: ' + a.$('gateInner').textContent);
+    if(a.w.eval('venues.length') !== 1) throw new Error('no rows');
+    if(a.$('addBtn').style.display === 'none') throw new Error('add button hidden');
+  });
+  await a.settle(500);
+  check('snapshot: a read that worked is kept on the device', () => {
+    const snap = JSON.parse(a.w.localStorage.getItem('eatdrink.snapshot') || 'null');
+    if(!snap || snap.main.length !== 1 || snap.main[0][0] !== 'Zuni Cafe') throw new Error(JSON.stringify(snap));
+  });
+}
+
+/* ---------- Excel asleep: the saved copy, read-only ---------- */
+{
+  const a = app({ venues: [V.zuni], menu: [M.zuni], asleep: true,
+    snapshot: { at: Date.now() - 3600e3, main: [V.zuni, V.philzSF], menu: [M.zuni] } });
+  await a.settle(400);
+  check('snapshot: the list as last saved is shown when Excel will not answer', () => {
+    if(a.$('gate').style.display !== 'none') throw new Error('gated: ' + a.$('gateInner').textContent);
+    if(a.w.eval('venues.length') !== 2) throw new Error(a.w.eval('venues.length') + ' rows');
+    if(a.w.eval('menuRows.length') !== 1) throw new Error('log not restored');
+  });
+  check('snapshot: the banner says it is a saved copy and how to wake Excel', () => {
+    const b = a.$('staleBanner');
+    if(b.style.display === 'none') throw new Error('no banner');
+    if(!/showing the list as saved today .* read-only/.test(b.textContent)) throw new Error(b.textContent);
+    if(!b.querySelector('#wakeLink')) throw new Error('no link');
+  });
+  check('snapshot: the add button is put away', () => {
+    if(a.$('addBtn').style.display !== 'none') throw new Error('add button shown');
+  });
+  let refused = null;
+  try{ await a.w.eval("graph('PATCH', '/worksheets(x)/tables(y)/rows/itemAt(index=0)', { values: [[]] })"); }
+  catch(e){ refused = e; }
+  check('snapshot: a write is refused before it reaches Graph', () => {
+    if(!refused || !refused.userFacing) throw new Error('not refused');
+    if(a.state.calls.length) throw new Error('reached Graph: ' + JSON.stringify(a.state.calls));
+  });
+  a.state.asleep = false;
+  Object.defineProperty(a.w.document, 'visibilityState', { get: () => 'visible', configurable: true });
+  Object.defineProperty(a.w.document, 'hidden', { get: () => false, configurable: true });
+  a.w.dispatchEvent(new a.w.Event('focus'));
+  await a.settle(400);
+  check('snapshot: the live list replaces it as soon as a read works', () => {
+    if(a.w.eval('venues.length') !== 1) throw new Error(a.w.eval('venues.length') + ' rows');
+    if(a.w.eval('readOnly') !== null) throw new Error('still read-only');
+    if(a.$('staleBanner').style.display !== 'none') throw new Error('banner left up');
+    if(a.$('addBtn').style.display === 'none') throw new Error('add button still hidden');
+  });
+}
+
+/* ---------- a write that hits a sleeping Excel ---------- */
+{
+  const a = app({ venues: [V.zuni] });
+  await a.settle(300);
+  a.state.asleep = true;
+  a.w.eval("withBusy(() => graph('PATCH', '/worksheets(x)/tables(y)/rows/itemAt(index=0)', { values: [[]] }))");
+  await a.settle(200);
+  check('asleep: a failed write says to open Excel, and keeps the list', () => {
+    if(!/Excel service has stopped answering/.test(a.state.alerted || '')) throw new Error(a.state.alerted);
+    if(a.$('staleBanner').style.display === 'none' || !a.$('staleBanner').querySelector('#wakeLink')) throw new Error('no link offered');
+    if(a.w.eval('venues.length') !== 1 || a.w.eval('readOnly') !== null) throw new Error('list changed');
+  });
+}
+
+/* ---------- hours lookup (Overpass) ---------- */
+{
+  const row = (name, addr, lat, lng, geo, chain = '', closed = '') =>
+    [name, 'Food', 'San Francisco, CA', '', '', '', '', addr, lat, lng, geo, chain, closed];
+  const el = (name, lat, lon, hours, extra = {}) =>
+    ({ type: 'node', lat, lon, tags: Object.assign({ name, amenity: 'restaurant' }, hours ? { opening_hours: hours } : {}, extra) });
+  const a = app({
+    venues: [
+      row('Nopa', '560 Divisadero St', '37.7749', '-122.4374', 'exact'),
+      row('Zuni Cafe', '1658 Market St', '37.7735', '-122.4222', 'exact'),
+      row('Tartine', '600 Guerrero St', '37.7614', '-122.4241', 'exact'),
+      row('Thai House', '1 Castro St', '37.7620', '-122.4350', 'exact'),
+      row('Che Fico', '', '', '', ''),                                   // entered through the app: no point
+      row('Souvla', '', '', '', ''),                                     // two of them on the map
+      row('20 Spot', '', '', '', ''),                                    // "Spot" is someone else
+      row('Gone', '9 Main St', '37.7700', '-122.4200', 'exact', '', 'closed'),
+    ],
+    osm: [
+      el('Nopa', 37.7749, -122.4374, 'Mo-Su 17:00-23:00'),
+      el('Zuni Café', 37.77352, -122.42222, 'Tu-Su 11:30-22:00'),
+      el('Tartine Bakery', 37.76145, -122.42412, 'Mo-Su 08:00-17:00'),
+      el('Lers Ros Thai', 37.76202, -122.43502, 'Mo-Su 11:00-22:00'),
+      el('Che Fico', 37.7765, -122.4381, 'Tu-Sa 17:30-22:00', { 'addr:housenumber': '838', 'addr:street': 'Divisadero Street', 'addr:postcode': '94117' }),
+      el('Souvla', 37.7765, -122.4263, 'Mo-Su 11:00-21:00'),
+      el('Souvla', 37.7609, -122.4215, 'Mo-Su 11:00-21:00'),
+      el('Spot', 37.7700, -122.4300, 'Mo-Su 09:00-17:00'),
+      el('Gone', 37.7700, -122.4200, 'Mo-Su 09:00-17:00'),
+    ],
+  });
+  await a.settle(400);
+  a.w.eval('openDiag()');
+  a.click(a.$('diagHours'));
+  await a.settle(900);
+  const r = name => a.state.venues.find(x => x[0] === name);
+  check('hours lookup: one question to OpenStreetMap, not one per place', () => {
+    if(a.state.osmAsked !== 1) throw new Error(a.state.osmAsked + ' requests');
+    if(a.state.geocoded.length) throw new Error('per-place lookups: ' + a.state.geocoded.join('; '));
+  });
+  check('hours lookup: the Hours column is added once', () => {
+    const cols = a.state.calls.filter(c => c.kind === 'addcol');
+    if(cols.length !== 1 || cols[0].body.name !== 'Hours') throw new Error(JSON.stringify(cols));
+  });
+  check('hours lookup: same name at the same spot gets its hours', () => {
+    if(r('Nopa')[13] !== 'Mo-Su 17:00-23:00') throw new Error(String(r('Nopa')[13]));
+    if(r('Zuni Cafe')[13] !== 'Tu-Su 11:30-22:00') throw new Error('accent not matched: ' + r('Zuni Cafe')[13]);
+  });
+  check('hours lookup: a longer form of the name on the same doorstep counts', () => {
+    if(r('Tartine')[13] !== 'Mo-Su 08:00-17:00') throw new Error(String(r('Tartine')[13]));
+  });
+  check('hours lookup: a neighbour that only shares a word does not', () => {
+    if(r('Thai House')[13]) throw new Error(r('Thai House')[13]);
+  });
+  check('hours lookup: a place with no point gets point, address and hours from a name that exists once', () => {
+    const c = r('Che Fico');
+    if(c[8] !== 37.7765 || c[9] !== -122.4381 || c[10] !== 'name') throw new Error(c.slice(8, 11).join('|'));
+    if(c[7] !== '838 Divisadero Street, San Francisco, CA 94117') throw new Error(c[7]);
+    if(c[13] !== 'Tu-Sa 17:30-22:00') throw new Error(String(c[13]));
+  });
+  check('hours lookup: a name that exists twice places nothing', () => {
+    if(r('Souvla')[8] !== '' || r('Souvla')[13]) throw new Error(r('Souvla').join('|'));
+  });
+  check('hours lookup: "20 Spot" is not "Spot"', () => {
+    if(r('20 Spot')[8] !== '' || r('20 Spot')[13]) throw new Error(r('20 Spot').join('|'));
+  });
+  check('hours lookup: a closed place is left alone', () => {
+    if(r('Gone')[13]) throw new Error(String(r('Gone')[13]));
+  });
+  check('hours lookup: the data check counts them', () => {
+    if(!/Have hours\s*4/.test(a.$('diagBody').textContent)) throw new Error(a.$('diagBody').textContent);
+  });
+  a.w.eval("closeDiag(); state.query = 'nopa'; render()");
+  check('hours: the list line carries open or opens', () => {
+    const sub = a.$('list').querySelector('.item-sub').textContent;
+    if(!/open until 11 pm|opens (tomorrow )?5 pm/.test(sub)) throw new Error(sub);
+  });
+  a.w.eval("openDetail(venues.find(v => v.name === 'Nopa'))");
+  check('hours: the detail sheet shows the week', () => {
+    const t = a.$('detailContent').textContent;
+    if(!/Hours/.test(t) || !/Mon\s*5 pm . 11 pm/.test(t)) throw new Error(t);
+  });
+  a.w.eval("closeDetail(); openForm(venues.find(v => v.name === 'Nopa'))");
+  a.$('f_notes').value = 'get the pork chop';
+  a.click(a.$('saveForm')); await a.settle(300);
+  check('form: an edit keeps the hours', () => {
+    if(r('Nopa')[5] !== 'get the pork chop') throw new Error('edit not saved');
+    if(r('Nopa')[13] !== 'Mo-Su 17:00-23:00') throw new Error('hours blanked: ' + r('Nopa')[13]);
+  });
+}
+{
+  const a = app({ venues: [['Nopa','Food','San Francisco, CA','','','','','560 Divisadero St','37.7749','-122.4374','exact','','']], osm: null });
+  await a.settle(300);
+  a.w.eval('openDiag()'); a.click(a.$('diagHours')); await a.settle(400);
+  check('hours lookup: no answer from OpenStreetMap changes nothing and says so', () => {
+    if(a.state.calls.length) throw new Error(JSON.stringify(a.state.calls));
+    if(!/OpenStreetMap did not answer/.test(a.state.alerted || '')) throw new Error(a.state.alerted);
+    if(a.$('diagHours').textContent !== 'Look up hours') throw new Error('button stuck: ' + a.$('diagHours').textContent);
   });
 }
 
