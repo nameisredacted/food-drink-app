@@ -710,4 +710,11 @@ either), and with no timeout the button sat on *asking OpenStreetMap…*. Each h
 **The live run, 2026-11-12** (through the app's own button, in the desktop app's browser pane;
 backup first: `archive/Food + Drink (pre-hours 20261112).xlsx`, a OneDrive copy of the workbook
 as it stood). Overpass answered in 55 s with 26,254 places for the nine counties, 9,754 with
-hours. See the commit message of the run's follow-up for the counts written.
+hours. 1,131 rows matched; **626 rows got hours** (595 in syntax the app understands, 31 shown as
+written) and **97 rows with no point were placed** (78 with a street address). Open rows with a
+point of their own went 1,709 -> 1,806; left out of the nearest ranking 445 -> 348. Geo Precision
+after the run: 1651 `exact`, 170 `name`, 220 `city`, 27 `zip`, 223 none. Venues (2291) and logged
+items (1146) unchanged. It took three goes: 88 rows at 2.5 s each before the session fix, a
+hang on Overpass, then 580 rows in about two minutes. The 97 placements were read through
+before the run; *Le Marais Bakery* and *Papalote* have more than one branch and OSM lists one,
+so their point is that branch.
