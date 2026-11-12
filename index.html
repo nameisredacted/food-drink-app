@@ -416,7 +416,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.11.12-3";
+const APP_VERSION = "2026.11.12-4";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -3054,6 +3054,7 @@ document.getElementById('diagLookup').addEventListener('click', async () => {
    longer than 250 characters are left out. Every write reads the row back first. */
 const OVERPASS_HOSTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
                         'https://overpass.private.coffee/api/interpreter'];
+const OVERPASS_WAIT_MS = 100000;
 const HOME_BOX = [36.85, -123.65, 38.90, -121.20];   // the nine counties, south-west-north-east
 const FOOD_AMENITY = 'restaurant|cafe|bar|pub|fast_food|ice_cream|food_court|biergarten|nightclub';
 const FOOD_SHOP = 'bakery|coffee|confectionery|deli|pastry|butcher|cheese|chocolate|wine|alcohol|tea|convenience|supermarket|greengrocer|seafood|farm|beverages';
@@ -3063,14 +3064,19 @@ async function fetchOsmFood(){
             ';nwr["name"]["shop"~"^(' + FOOD_SHOP + ')$"]' + bb + ';);out center tags;';
   let last = null;
   for(const host of OVERPASS_HOSTS){
+    // a server that has stopped answering holds the request open for minutes: give
+    // each one 100 s (a good answer took 55), then move on to the next
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), OVERPASS_WAIT_MS);
     try{
       const res = await fetch(host, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(q) });
+        body: 'data=' + encodeURIComponent(q), signal: ctl.signal });
       if(!res.ok){ last = new Error('http ' + res.status); continue; }
       const j = await res.json();
       if(j && Array.isArray(j.elements)) return j.elements;
       last = new Error('no data');
-    }catch(e){ last = e; }
+    }catch(e){ last = e && e.name === 'AbortError' ? new Error('no answer in ' + Math.round(OVERPASS_WAIT_MS / 1000) + ' s') : e; }
+    finally{ clearTimeout(timer); }
   }
   const e = new Error('OpenStreetMap did not answer (' + (last ? last.message : 'no reply') + '). Nothing was changed.');
   e.userFacing = true;

@@ -702,6 +702,11 @@ for 671 rows. `openSession()` / `closeSession()` wrap the hours run; `graph()` s
 `workbook-session-id` while one is open and drops it and retries once if Excel says the session
 is gone. Everyday edits do not open one.
 
+**Overpass can simply stop answering (2026.11.12-4).** After three large queries in an hour
+`overpass-api.de` held the fourth open for over four minutes (its `/api/status` did not answer
+either), and with no timeout the button sat on *asking OpenStreetMap…*. Each host now gets
+100 s (`OVERPASS_WAIT_MS`) before the next one in `OVERPASS_HOSTS` is tried.
+
 **The live run, 2026-11-12** (through the app's own button, in the desktop app's browser pane;
 backup first: `archive/Food + Drink (pre-hours 20261112).xlsx`, a OneDrive copy of the workbook
 as it stood). Overpass answered in 55 s with 26,254 places for the nine counties, 9,754 with
