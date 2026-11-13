@@ -23,8 +23,11 @@ const VERSION = (/const APP_VERSION = "([^"]+)"/.exec(html) || [])[1] || 'test';
    when it has stopped answering for the account (state.asleep can be flipped back);
    `snapshot` seeds the copy the app keeps on the device; `osm` is what Overpass
    returns (null = it does not answer). */
-function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = null, asleep = false, snapshot = null, osm = null } = {}){
-  const state = { venues: venues.map(r => r.slice()), menu: menu.map(r => r.slice()), calls: [], geocoded: [], fixOpts: [], asleep, osmAsked: 0 };
+/* `google(kind, arg)` answers Google's Places API: kind 'search' gets the request body,
+   'details' the place ID; a number is the HTTP status it fails with. `googleKey` puts a
+   key on the device. Every request lands in state.google. */
+function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = null, asleep = false, snapshot = null, osm = null, google = null, googleKey = '' } = {}){
+  const state = { venues: venues.map(r => r.slice()), menu: menu.map(r => r.slice()), calls: [], geocoded: [], fixOpts: [], asleep, osmAsked: 0, google: [] };
   let snapV = state.venues.map(r => r.slice()), snapM = state.menu.map(r => r.slice()), lag = 0;
   const rows = v => ({ value: v.map((r, i) => ({ index: i, values: [r] })) });
   const dom = new JSDOM(html, {
@@ -32,6 +35,7 @@ function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = nu
     url: 'https://nameisredacted.github.io/food-drink-app/',
     beforeParse(w){
       if(snapshot) w.localStorage.setItem('eatdrink.snapshot', JSON.stringify(snapshot));
+      if(googleKey) w.localStorage.setItem('eatdrink.googleKey', googleKey);
       w.msal = { PublicClientApplication: class {
         async initialize(){} async handleRedirectPromise(){ return null; }
         getAllAccounts(){ return [{ username: 'test' }]; }
@@ -46,6 +50,16 @@ function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = nu
           state.geocoded.push(q);
           const hit = geocode(q);
           return { ok: true, status: 200, async json(){ return hit ? [hit] : []; } };
+        }
+        if(u.includes('places.googleapis.com')){
+          const h = opts.headers || {};
+          const kind = u.includes(':searchText') ? 'search' : 'details';
+          const arg = kind === 'search' ? JSON.parse(opts.body) : decodeURIComponent(u.split('/places/')[1]);
+          state.google.push({ kind, arg, mask: h['X-Goog-FieldMask'], key: h['X-Goog-Api-Key'] });
+          const r = google ? google(kind, arg, state.google.length) : 400;
+          if(typeof r === 'number')
+            return { ok: false, status: r, async json(){ return { error: { message: r === 429 ? 'Quota exceeded for quota metric' : 'API key not valid' } }; } };
+          return { ok: true, status: 200, async json(){ return r; } };
         }
         if(u.includes('/api/interpreter')){
           state.osmAsked++;
@@ -1102,6 +1116,192 @@ const check = (name, fn) => {
     if(a.state.calls.length) throw new Error(JSON.stringify(a.state.calls));
     if(!/OpenStreetMap did not answer/.test(a.state.alerted || '')) throw new Error(a.state.alerted);
     if(a.$('diagHours').textContent !== 'Look up hours') throw new Error('button stuck: ' + a.$('diagHours').textContent);
+  });
+}
+
+/* ---------- Google Maps (2026.11.12-5) ---------- */
+{
+  const a = app({ venues: [V.zuni] });
+  await a.settle(300);
+  const week = periods => a.w.eval(`JSON.stringify(googleWeek(${JSON.stringify({ periods })}))`);
+  const P = (od, oh, om, cd, ch, cm) => ({ open: { day: od, hour: oh, minute: om }, close: { day: cd, hour: ch, minute: cm } });
+  check('google hours: a weekday span lands on its day (0 is Sunday)', () => {
+    const w = JSON.parse(week([P(1, 11, 30, 1, 22, 0)]));
+    if(JSON.stringify(w[1]) !== '[[690,1320]]' || w[0].length || w[2].length) throw new Error(JSON.stringify(w));
+  });
+  check('google hours: a span that closes the next day runs past midnight', () => {
+    const w = JSON.parse(week([P(5, 17, 0, 6, 2, 0)]));
+    if(JSON.stringify(w[5]) !== '[[1020,1560]]') throw new Error(JSON.stringify(w));
+  });
+  check('google hours: a place that never shuts is open every day', () => {
+    const w = JSON.parse(week([{ open: { day: 0, hour: 0, minute: 0 } }]));
+    if(!w.every(d => JSON.stringify(d) === '[[0,1440]]')) throw new Error(JSON.stringify(w));
+  });
+  check('google hours: no periods, no claim', () => {
+    if(week([]) !== 'null') throw new Error(week([]));
+  });
+  a.w.eval('openDiag()');
+  check('google: without a key the check is off and says why', () => {
+    if(!a.$('diagGoogle').disabled || !/needs a key/.test(a.$('diagGoogle').textContent)) throw new Error(a.$('diagGoogle').textContent);
+    if(a.$('diagGoogleKey').textContent !== 'Set Google key') throw new Error(a.$('diagGoogleKey').textContent);
+  });
+  a.w.eval("closeDiag(); openDetail(venues[0])"); await a.settle(100);
+  check('google: without a key nothing is asked', () => {
+    if(a.state.google.length) throw new Error(a.state.google.length + ' requests');
+  });
+}
+{
+  const row = (name, addr, lat, lng, geo, closed = '', hours = '') =>
+    [name, 'Food', 'San Francisco, CA', '', '', '', '', addr, lat, lng, geo, '', closed, hours];
+  const g = (id, name, lat, lng, status = 'OPERATIONAL') =>
+    ({ id, displayName: { text: name }, location: { latitude: lat, longitude: lng }, businessStatus: status });
+  const a = app({ googleKey: 'key-on-this-device',
+    venues: [
+      row('Nopa', '560 Divisadero St', '37.7749', '-122.4374', 'exact', '', 'Mo-Su 17:00-23:00'),
+      row('Bellota', '888 Brannan St', '37.7716', '-122.4052', 'exact'),
+      row('Thai House', '1 Castro St', '37.7620', '-122.4350', 'exact'),
+      row('Far Away', '1 Main St', '37.7900', '-122.3930', 'exact'),
+      row('Che Fico', '', '', '', ''),                                   // no point: found by its town
+      row('Moved Cafe', '5 Hayes St', '37.7770', '-122.4200', 'exact'),
+      row('Gone', '9 Main St', '37.7700', '-122.4200', 'exact', 'closed'),
+    ],
+    google: (kind, arg) => {
+      if(kind !== 'search') return 400;
+      const q = arg.textQuery;
+      if(/^Nopa/.test(q)) return { places: [g('g-nopa', 'Nopa', 37.7749, -122.4374)] };
+      if(/^Bellota/.test(q)) return { places: [g('g-bellota', 'Bellota', 37.7716, -122.4052, 'CLOSED_PERMANENTLY')] };
+      if(/^Thai House/.test(q)) return { places: [g('g-lers', 'Lers Ros Thai', 37.7620, -122.4350)] };
+      if(/^Far Away/.test(q)) return { places: [g('g-far', 'Far Away', 37.8300, -122.3930)] };
+      if(/^Che Fico/.test(q)) return { places: [g('g-chefico', 'Che Fico', 37.7765, -122.4381)] };
+      if(/^Moved Cafe/.test(q)) return { places: [g('g-old', 'Moved Cafe', 37.7770, -122.4200, 'CLOSED_PERMANENTLY'), g('g-new', 'Moved Cafe', 37.7772, -122.4203)] };
+      return { places: [] };
+    } });
+  await a.settle(400);
+  a.w.eval('openDiag()');
+  check('google: with a key the button says how many', () => {
+    if(a.$('diagGoogle').disabled || a.$('diagGoogle').textContent !== 'Check 6 with Google') throw new Error(a.$('diagGoogle').textContent);
+  });
+  a.click(a.$('diagGoogle')); await a.settle(900);
+  const r = name => a.state.venues.find(x => x[0] === name);
+  check('google: one search per open place, with this device\'s key', () => {
+    if(a.state.google.length !== 6) throw new Error(a.state.google.length + ' requests');
+    if(a.state.google.some(q => q.key !== 'key-on-this-device')) throw new Error('wrong key sent');
+    if(a.state.google.some(q => /^Gone/.test(q.arg.textQuery))) throw new Error('asked about a closed place');
+  });
+  check('google: the check asks for nothing beyond the Pro fields (hours are never fetched ahead)', () => {
+    const masks = [...new Set(a.state.google.map(q => q.mask))];
+    if(masks.join('|') !== 'places.id,places.displayName,places.location,places.businessStatus') throw new Error(masks.join('|'));
+  });
+  check('google: Place ID and Checked are added as the 15th and 16th columns', () => {
+    const cols = a.state.calls.filter(c => c.kind === 'addcol').map(c => c.body.name);
+    if(cols.join('|') !== 'Place ID|Checked') throw new Error(cols.join('|'));
+  });
+  check('google: a found place keeps Google\'s ID and the day it was asked', () => {
+    if(r('Nopa')[14] !== 'g-nopa') throw new Error(String(r('Nopa')[14]));
+    if(!/^checked \d{4}-\d{2}-\d{2}$/.test(r('Nopa')[15])) throw new Error(String(r('Nopa')[15]));
+  });
+  check('google: nothing else of Google\'s is written - no address, point or hours', () => {
+    const c = r('Che Fico');
+    if(c[14] !== 'g-chefico') throw new Error('not found: ' + c[14]);
+    if(c[7] !== '' || c[8] !== '' || c[9] !== '' || c[10] !== '' || c[13] !== '') throw new Error(c.slice(7, 14).join('|'));
+    if(r('Nopa')[13] !== 'Mo-Su 17:00-23:00') throw new Error('stored hours touched');
+  });
+  check('google: a neighbour of another name, or the same name miles off, is not a match', () => {
+    if(r('Thai House')[14] !== '' || r('Far Away')[14] !== '') throw new Error(r('Thai House')[14] + ' / ' + r('Far Away')[14]);
+    if(!/^checked /.test(r('Thai House')[15])) throw new Error('not stamped, would be asked again first');
+  });
+  check('google: a place Google lists as permanently closed is marked, after being shown', () => {
+    if(!/^closed \(Google Maps, \w+ \d{4}\)$/.test(r('Bellota')[12])) throw new Error(String(r('Bellota')[12]));
+  });
+  check('google: a place that moved - old listing closed, new one open - stays open', () => {
+    if(r('Moved Cafe')[12] !== '' || r('Moved Cafe')[14] !== 'g-new') throw new Error(r('Moved Cafe')[12] + ' / ' + r('Moved Cafe')[14]);
+  });
+  check('google: the run says what it did', () => {
+    if(!/^4 found on Google Maps, 2 not matched, 1 marked closed\.$/.test(a.state.alerted || '')) throw new Error(a.state.alerted);
+  });
+  check('google: the key is not written anywhere but this device', () => {
+    if(JSON.stringify(a.state.venues).includes('key-on-this-device') || JSON.stringify(a.state.calls).includes('key-on-this-device')) throw new Error('key in the workbook');
+    if((a.w.localStorage.getItem('eatdrink.snapshot') || '').includes('key-on-this-device')) throw new Error('key in the saved copy');
+  });
+  a.w.eval("closeDiag(); openForm(venues.find(v => v.name === 'Nopa'))");
+  a.$('f_notes').value = 'pork chop';
+  a.click(a.$('saveForm')); await a.settle(300);
+  check('form: an edit keeps the Google ID', () => {
+    if(r('Nopa')[14] !== 'g-nopa' || !/^checked /.test(r('Nopa')[15])) throw new Error(r('Nopa').slice(14).join('|'));
+  });
+  a.w.eval("openForm(venues.find(v => v.name === 'Nopa'))");
+  a.$('f_name').value = 'Nopalito';
+  a.click(a.$('saveForm')); await a.settle(300);
+  check('form: a renamed place is asked about again', () => {
+    if(r('Nopalito')[14] !== '' || r('Nopalito')[15] !== '') throw new Error(r('Nopalito').slice(14).join('|'));
+  });
+}
+{
+  // the daily cap on the key runs out part-way
+  const row = (name, lat) => [name, 'Food', 'San Francisco, CA', '', '', '', '', '1 St', lat, '-122.4374', 'exact', '', '', '', '', ''];
+  const a = app({ googleKey: 'k', venues: [row('A One', '37.7700'), row('B Two', '37.7710'), row('C Three', '37.7720')],
+    google: (kind, arg, n) => n >= 3 ? 429 : { places: [{ id: 'g' + n, displayName: { text: arg.textQuery.split(',')[0] },
+      location: { latitude: n === 1 ? 37.7700 : 37.7710, longitude: -122.4374 }, businessStatus: 'OPERATIONAL' }] } });
+  await a.settle(300);
+  a.w.eval('openDiag()'); a.click(a.$('diagGoogle')); await a.settle(700);
+  check('google: when the day\'s allowance runs out the run stops, keeps what it has, and says so', () => {
+    const got = a.state.venues.filter(x => x[14]).length;
+    if(got !== 2) throw new Error(got + ' written');
+    if(!/allowance for today is used up/.test(a.state.alerted || '')) throw new Error(a.state.alerted);
+    if(a.state.google.length !== 3) throw new Error('kept asking: ' + a.state.google.length);
+  });
+  a.w.eval("closeDiag()"); a.w.eval('openDiag()');
+  check('google: the place not reached is first in line next time', () => {
+    if(a.w.eval('googleRows()[0].name') !== 'C Three') throw new Error(a.w.eval('googleRows()[0].name'));
+  });
+}
+{
+  // hours read live on the detail sheet
+  const P = (d, oh, om, ch, cm) => ({ open: { day: d, hour: oh, minute: om }, close: { day: d, hour: ch, minute: cm } });
+  let status = 'OPERATIONAL', fail = 0;
+  const a = app({ googleKey: 'k',
+    venues: [['Nopa','Food','San Francisco, CA','','','','','560 Divisadero St','37.7749','-122.4374','exact','','','Mo-Su 09:00-10:00','g-nopa','checked 2026-11-12'],
+             ['Zuni Cafe','Food','San Francisco, CA','','','','','1658 Market St','37.7735','-122.4222','exact','','','Tu-Su 11:30-22:00','','']],
+    google: (kind, id) => fail || (kind === 'details' && id === 'g-nopa'
+      ? { businessStatus: status, regularOpeningHours: { periods: [0,1,2,3,4,5,6].map(d => P(d, 17, 30, 23, 0)) } } : 400) });
+  await a.settle(300);
+  a.w.eval("openDetail(venues[0])"); await a.settle(150);
+  check('google: opening a place reads its hours there and then', () => {
+    const t = a.$('d_hours').textContent;
+    if(!/Google Maps/.test(t) || !/Mon\s*5:30 pm . 11 pm/.test(t)) throw new Error(t);
+    if(/9 am/.test(t)) throw new Error('stored hours still shown: ' + t);
+  });
+  check('google: that is one Place Details request for hours and status only', () => {
+    if(a.state.google.length !== 1 || a.state.google[0].kind !== 'details' || a.state.google[0].arg !== 'g-nopa') throw new Error(JSON.stringify(a.state.google));
+    if(a.state.google[0].mask !== 'regularOpeningHours,businessStatus') throw new Error(a.state.google[0].mask);
+  });
+  a.w.eval("closeDetail(); openDetail(venues[0])"); await a.settle(150);
+  check('google: opening it again in the same visit does not ask twice', () => {
+    if(a.state.google.length !== 1) throw new Error(a.state.google.length + ' requests');
+    if(!/Google Maps/.test(a.$('d_hours').textContent)) throw new Error('live hours lost');
+  });
+  check('google: what it said is kept nowhere - not the workbook, not the device', () => {
+    if(a.state.calls.length) throw new Error('wrote: ' + JSON.stringify(a.state.calls));
+    const stored = Object.keys(a.w.localStorage).map(k => a.w.localStorage.getItem(k)).join(' ');
+    if(/17:30|"periods"|1050/.test(stored)) throw new Error('hours on the device');
+  });
+  a.w.eval("closeDetail(); openDetail(venues[1])"); await a.settle(150);
+  check('google: a place not found there shows the stored hours and asks nothing', () => {
+    if(a.state.google.length !== 1) throw new Error('asked');
+    if(!/OpenStreetMap/.test(a.$('d_hours').textContent)) throw new Error(a.$('d_hours').textContent);
+  });
+  a.w.eval("closeDetail(); liveCache.clear()"); fail = 429;
+  a.w.eval("openDetail(venues[0])"); await a.settle(150);
+  check('google: out of allowance, the stored hours stay on the sheet', () => {
+    const t = a.$('d_hours').textContent;
+    if(!/OpenStreetMap/.test(t) || !/9 am/.test(t)) throw new Error(t);
+    if(a.state.alerted) throw new Error('nagged: ' + a.state.alerted);
+  });
+  a.w.eval("closeDetail(); liveCache.clear()"); fail = 0; status = 'CLOSED_PERMANENTLY';
+  a.w.eval("openDetail(venues[0])"); await a.settle(150);
+  check('google: a place it lists as permanently closed says so on the sheet', () => {
+    if(!/Google Maps lists this place as permanently closed/.test(a.$('d_hours').textContent)) throw new Error(a.$('d_hours').textContent);
+    if(a.state.venues[0][12] !== '') throw new Error('marked without being asked');
   });
 }
 

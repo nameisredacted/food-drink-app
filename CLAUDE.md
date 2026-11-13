@@ -19,10 +19,14 @@ Single-file web app for a personal food/drink list. `index.html` is the whole ap
 
 `Food + Drink.xlsx`, table **FoodDrinkTable** on sheet **Food + Drink**:
 
-`Name | Category | Location | To Order | Rating | Notes | Has Menu Detail | Address | Lat | Lng | Geo Precision | Chain | Closed | Hours`
+`Name | Category | Location | To Order | Rating | Notes | Has Menu Detail | Address | Lat | Lng | Geo Precision | Chain | Closed | Hours | Place ID | Checked`
 
 `Hours` (14th, added through Graph by the app the first time hours are looked up) holds
 OpenStreetMap `opening_hours` text. See *Excel asleep, nearest, hours (2026.11.12-1)*.
+`Place ID` (15th) and `Checked` (16th) are added the same way by the first *Check with Google*
+run: Google's place ID, and `checked YYYY-MM-DD` — the day this app last asked Google about the
+row (text on purpose: a bare date would be turned into a serial number by Excel). See
+*Google Maps (2026.11.12-5)*.
 
 **Never widen a table's `ref` in openpyxl without adding the matching `tableColumn`
 entries.** Setting `ws.tables['FoodDrinkTable'].ref` to `A1:M…` while `xl/tables/table1.xml`
@@ -682,7 +686,8 @@ named food/drink places, 2,195 of them with hours; of 1,134 placed open non-chai
 this way, and OSM hours can be stale. **It cannot say a place has shut for good** — OSM
 simply drops or retags those. Google's Places API (New) has both (`regularOpeningHours`,
 `businessStatus: CLOSED_PERMANENTLY`) and would cover nearly everything, but it needs the
-user's own API key and billing account; put to the user on 2026-11-12, nothing built.
+user's own API key and billing account; put to the user on 2026-11-12, who answered
+"keep it free" — built in 2026.11.12-5, below.
 
 Tests: `app({ asleep, snapshot, osm })` in `tests/smoke.mjs` model the 401, the saved copy and
 Overpass. 123 checks.
@@ -718,3 +723,59 @@ items (1146) unchanged. It took three goes: 88 rows at 2.5 s each before the ses
 hang on Overpass, then 580 rows in about two minutes. The 97 placements were read through
 before the run; *Le Marais Bakery* and *Papalote* have more than one branch and OSM lists one,
 so their point is that branch.
+
+## Google Maps (2026.11.12-5)
+
+The user's two answers on 2026-11-12: **"keep it free"** (Google, but never past its free
+monthly allowance) and **"hide"** (closed places are hidden from nearest, not deleted — the
+standing rule holds).
+
+**What Google allows to be kept decides the design.** Its Places policies: *"You must not
+pre-fetch, cache, or store Places API content beyond the allowed exceptions"*; the place ID may
+be stored indefinitely, a latitude/longitude for 30 days, nothing else. So Google's hours,
+addresses, points and business status are **never written to the workbook or the device**, and
+hours are not fetched ahead for the list. Do not "improve" this by filling the `Hours` column
+from Google or by writing its point onto an unplaced row.
+
+- **Workbook**: `Place ID` and `Checked` only.
+- **Live hours**: opening a place's sheet calls Place Details for
+  `regularOpeningHours,businessStatus` (`showLiveHours`) and shows Google's week in place of the
+  stored OpenStreetMap one, with *Google Maps — read just now*. Held in `liveCache` for the visit
+  only. If Google lists the place as permanently or temporarily closed the sheet says so; it is
+  not marked. No key, no Place ID, a 429 or any failure: the stored hours stay, silently.
+  List rows (search, nearest) show the stored OSM hours only.
+- **Data check ▸ Check with Google** (`findOnGoogle`): Text Search for
+  `places.id,places.displayName,places.location,places.businessStatus`, query
+  `name, address-or-location`, biased to the row's point (1.5 km) or its town's centre (15 km).
+  A match needs the name rule from the OSM lookup (one name is the other, or its start) **and**
+  the place: within 0.25 mi of a placed row, 6 mi of the town centre of an unplaced one. An
+  `OPERATIONAL` listing wins over a closed one of the same name (a place that moved leaves its old
+  listing behind). 150 rows a tap (`GOOGLE_RUN`), never-checked rows first, then the longest ago
+  (`googleRows`), so repeated taps sweep the whole list and then start over. Every row asked about
+  gets `Checked`, found or not. Places Google lists as `CLOSED_PERMANENTLY` are **named in one
+  confirm** and only then marked `closed (Google Maps, Mon YYYY)` — a wrong match would turn a
+  live place into a read-only record. Closed rows and unplaced chains are not asked about.
+- **The key** is typed into data check ▸ *Set Google key* and kept in `localStorage`
+  (`eatdrink.googleKey`) per device. Never commit it: the repo and the page are public.
+- Renaming a place or changing its Location clears `Place ID` and `Checked`.
+
+**Free is enforced on the key, not in the app.** Google's own pages (checked 2026-11-12):
+each Pro SKU has 5,000 free requests a month and each Enterprise SKU 1,000; `businessStatus`,
+`displayName`, `location` are Text Search Pro; `regularOpeningHours` is Place Details
+Enterprise; quotas are per API method and can be capped per day in the Cloud console (with a
+warning that enforcement lags, so leave a margin). The caps to set: **Text Search 150 a day**
+(4,650 a month) and **Place Details 30 a day** (930 a month). With those the bill cannot leave
+zero whatever the app or a second device does; the app only reacts to the 429 (the run stops
+and says the rest can go tomorrow; a sheet shows the stored hours). A billing account with a
+card is still required by Google to issue the key.
+
+`places.googleapis.com` answers the browser from the Pages origin (CORS checked from the live
+page with a dummy key: a readable 400 `API_KEY_INVALID`, not a blocked request). The legacy
+`maps.googleapis.com/maps/api/place/…` endpoints do not; do not use them.
+
+**Not yet run against a real key** — none existed when this was built. The request and response
+shapes are from Google's reference (periods `{open:{day,hour,minute},close:{…}}`, day 0 =
+Sunday; always-open is one period opening Sunday 0:00 with no close; `BusinessStatus` enum),
+and the tests stub them (`app({ google, googleKey })`). The first real run is the test.
+
+Tests: 151 checks.

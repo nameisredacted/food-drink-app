@@ -73,6 +73,7 @@
   #staleBanner a, .gate a{color:var(--accent);text-decoration:underline;cursor:pointer;}
   .chip.near{background:#2b4c7a;color:#dce8f7;border-color:#3a6296;font-weight:600;}
   .dist{color:var(--accent);font-size:12px;margin-left:6px;}
+  #diagSheet .btnrow .btn{flex:1 1 40%;}
   .hrs{font-size:12px;margin-left:6px;color:var(--muted);}
   .hrs.open{color:var(--good);}
   .hrsrow{display:flex;justify-content:space-between;gap:16px;font-size:14px;padding:2px 0;max-width:280px;}
@@ -331,7 +332,7 @@ select.on{color:#111;font-weight:700;}
   <h2>data check</h2>
   <div class="sub" id="diagSub">Reads the workbook and reports rows the app cannot match.</div>
   <div id="diagBody"></div>
-  <div class="btnrow" style="margin-top:14px;">
+  <div class="btnrow" style="margin-top:14px;flex-wrap:wrap;">
     <button class="btn ghost" id="diagFixFlags">Repair menu flags</button>
     <button class="btn ghost" id="diagMarkChains">Mark chains</button>
     <button class="btn ghost" id="diagMergeDupes">Merge duplicates</button>
@@ -339,6 +340,8 @@ select.on{color:#111;font-weight:700;}
     <button class="btn ghost" id="diagAttachStrays">Attach logged items</button>
     <button class="btn ghost" id="diagLookup">Look up addresses</button>
     <button class="btn ghost" id="diagHours">Look up hours</button>
+    <button class="btn ghost" id="diagGoogle">Check with Google</button>
+    <button class="btn ghost" id="diagGoogleKey">Set Google key</button>
   </div>
 </div>
 
@@ -416,7 +419,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.11.12-4";
+const APP_VERSION = "2026.11.12-5";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -536,8 +539,8 @@ async function deleteTableRow(sheet, table, index){
    are read and written at the width the table actually has, and a column is added
    the first time it is needed. */
 const BASE_WIDTH = 11;
-const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain','closed','hours'];
-const CHAIN_COL = 'Chain', CLOSED_COL = 'Closed', HOURS_COL = 'Hours';
+const COLS = ['name','category','location','toOrder','rating','notes','hasMenuDetail','address','lat','lng','geo','chain','closed','hours','placeId','checked'];
+const CHAIN_COL = 'Chain', CLOSED_COL = 'Closed', HOURS_COL = 'Hours', PLACE_COL = 'Place ID', CHECKED_COL = 'Checked';
 let mainWidth = BASE_WIDTH;   // until the first read says otherwise
 /* Graph serves the pre-write copy for a moment after a write - including after a
    column is added. A read in that window is one column short, and writing rows at
@@ -1006,8 +1009,8 @@ function pacificNow(when){
   const get = t => (parts.find(x => x.type === t) || {}).value || '';
   return { day: DAYS.indexOf(get('weekday').slice(0, 2)), min: (+get('hour') % 24) * 60 + +get('minute') };
 }
-function hoursStatus(text, when){
-  const week = parseHours(text);
+function hoursStatus(text, when){ return weekStatus(parseHours(text), when); }
+function weekStatus(week, when){
   if(!week) return null;
   const { day, min } = pacificNow(when);
   if(day < 0) return null;
@@ -1030,7 +1033,9 @@ function fmtClock(m){
    Never the word closed: in this app that means gone for good. */
 function hoursLabel(v, when){
   if(isClosed(v)) return '';
-  const st = hoursStatus(v.hours, when);
+  return statusLabel(hoursStatus(v.hours, when));
+}
+function statusLabel(st){
   if(!st) return '';
   if(st.open) return st.allDay ? 'open 24 hours' : 'open until ' + fmtClock(st.until);
   if(st.at === undefined) return '';
@@ -1040,18 +1045,154 @@ function hoursTag(v, when){
   const label = hoursLabel(v, when);
   return label ? '<span class="hrs' + (/^open/.test(label) ? ' open' : '') + '">' + label + '</span>' : '';
 }
-function hoursField(v){
+function weekRows(week){
+  return [1,2,3,4,5,6,0].map(d => '<div class="hrsrow"><span>' + DAY_NAMES[d] + '</span><span>' +
+    (week[d].length ? week[d].map(sp => fmtClock(sp[0]) + ' – ' + fmtClock(sp[1])).join(', ') : 'shut') +
+    '</span></div>').join('');
+}
+/* `live` is what Google Maps said a moment ago (showLiveHours); without it the
+   field shows what the workbook holds, which is OpenStreetMap's. */
+function hoursField(v, live){
+  if(isClosed(v)) return '';
+  if(live && live.week){
+    const label = statusLabel(weekStatus(live.week));
+    return '<div class="field"><label>Hours' + (label ? ' · ' + label : '') + '</label>' + weekRows(live.week) +
+           '<div class="hint">Google Maps — read just now</div></div>';
+  }
   const raw = String(v.hours || '').trim();
-  if(!raw || isClosed(v)) return '';
+  if(!raw) return '';
   const week = parseHours(raw), label = hoursLabel(v);
-  const body = week
-    ? [1,2,3,4,5,6,0].map(d => '<div class="hrsrow"><span>' + DAY_NAMES[d] + '</span><span>' +
-        (week[d].length ? week[d].map(sp => fmtClock(sp[0]) + ' – ' + fmtClock(sp[1])).join(', ') : 'shut') +
-        '</span></div>').join('')
-    : '<div>' + escapeHtml(raw) + '</div>';
-  return '<div class="field"><label>Hours' + (label ? ' · ' + label : '') + '</label>' + body +
+  return '<div class="field"><label>Hours' + (label ? ' · ' + label : '') + '</label>' +
+         (week ? weekRows(week) : '<div>' + escapeHtml(raw) + '</div>') +
          '<div class="hint">from OpenStreetMap — can be out of date</div></div>';
 }
+
+/* ====== Google Maps: hours read live, and whether a place is still there ======
+   Google's terms allow one thing to be kept: the place ID. Hours, addresses, points
+   and business status may not be stored or fetched ahead of need. So:
+
+   - the workbook keeps `Place ID` and `Checked` (the day this app last asked, its
+     own bookkeeping) and nothing else of Google's;
+   - opening a place's sheet reads its hours from Google there and then (Place
+     Details, fields regularOpeningHours + businessStatus) and shows them in place
+     of the stored OpenStreetMap ones. They are held for this visit only - in
+     memory, never in the workbook or on the device;
+   - data check > "Check with Google" finds each place (Text Search: id, name,
+     point, business status), keeps the ID, and puts the ones Google lists as
+     permanently closed to the user to mark closed.
+
+   Free is a matter of two caps the user sets on the key in Google's console - Text
+   Search and Place Details requests per day - not of anything counted here. When
+   Google answers 429 the run stops and says so; a sheet just shows the stored hours.
+   The key lives on this device only (localStorage), never in the repo: the page is
+   public. */
+const GKEY_STORE = 'eatdrink.googleKey';
+function googleKey(){ try{ return (localStorage.getItem(GKEY_STORE) || '').trim(); }catch(e){ return ''; } }
+function setGoogleKey(k){
+  try{ if(k) localStorage.setItem(GKEY_STORE, k); else localStorage.removeItem(GKEY_STORE); }catch(e){}
+  liveCache.clear();
+}
+async function google(path, mask, body){
+  const res = await fetch('https://places.googleapis.com/v1/' + path, {
+    method: body ? 'POST' : 'GET',
+    headers: Object.assign({ 'X-Goog-Api-Key': googleKey(), 'X-Goog-FieldMask': mask },
+                           body ? { 'Content-Type': 'application/json' } : {}),
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!res.ok){
+    let msg = '';
+    try{ const j = await res.json(); msg = (j && j.error && j.error.message) || ''; }catch(e){}
+    const e = new Error('Google Maps: ' + (msg || 'http ' + res.status));
+    e.status = res.status;
+    e.quota = res.status === 429;           // today's allowance is used up
+    e.userFacing = true;
+    throw e;
+  }
+  return res.json();
+}
+/* Google's periods ({ open: { day, hour, minute }, close: {...} }, day 0 = Sunday;
+   a place that never shuts is one period opening Sunday 0:00 with no close) as the
+   same week parseHours() returns. */
+function googleWeek(oh){
+  const periods = oh && Array.isArray(oh.periods) ? oh.periods : null;
+  if(!periods || !periods.length) return null;
+  const week = DAYS.map(() => []);
+  for(const p of periods){
+    if(!p.open || typeof p.open.day !== 'number' || p.open.day < 0 || p.open.day > 6) return null;
+    const a = (p.open.hour || 0) * 60 + (p.open.minute || 0);
+    if(!p.close){
+      if(periods.length === 1 && p.open.day === 0 && a === 0) return DAYS.map(() => [[0, 1440]]);
+      return null;
+    }
+    const over = ((p.close.day - p.open.day) % 7 + 7) % 7;
+    let b = over * 1440 + (p.close.hour || 0) * 60 + (p.close.minute || 0);
+    if(b <= a) b += 7 * 1440;
+    week[p.open.day].push([a, b]);
+  }
+  week.forEach(d => d.sort((x, y) => x[0] - y[0]));
+  return week;
+}
+const liveCache = new Map();     // place ID -> { week, status }, for this visit only
+let detailFor = null;            // the place the detail sheet is showing
+async function showLiveHours(v){
+  detailFor = vKey(v);
+  const id = String(v.placeId || '').trim();
+  if(!id || !googleKey() || isClosed(v)) return;
+  let live = liveCache.get(id);
+  if(!live){
+    try{
+      const d = await google('places/' + encodeURIComponent(id), 'regularOpeningHours,businessStatus');
+      live = { week: googleWeek(d && d.regularOpeningHours), status: (d && d.businessStatus) || '' };
+      liveCache.set(id, live);
+    }catch(e){ return; }         // out of allowance, offline, a bad key: the stored hours stay
+  }
+  if(detailFor !== vKey(v)) return;      // another place has been opened since
+  const box = document.getElementById('d_hours');
+  if(!box) return;
+  box.innerHTML =
+    (live.status === 'CLOSED_PERMANENTLY' ? '<div class="closedline">Google Maps lists this place as permanently closed.</div>'
+     : live.status === 'CLOSED_TEMPORARILY' ? '<div class="closedline">Google Maps lists this place as temporarily closed.</div>' : '') +
+    hoursField(v, live);
+}
+function todayPacific(){
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+function monthPacific(){
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', year: 'numeric' }).format(new Date());
+}
+/* who is due a check: never asked first, then the longest ago. A row needs
+   something to be found by - its own point, or a town. */
+const GOOGLE_RUN = 150;          // a tap's worth; the daily cap on the key is the real limit
+function googleRows(){
+  return liveVenues().filter(v => !isClosed(v)
+      && (isPlaced(v) || (!isChain(v) && !isPseudoLocation(v.location) && !!locCentroids.get(normTxt(v.location || '')))))
+    .sort((x, y) => String(x.checked || '').localeCompare(String(y.checked || '')));
+}
+/* the same name rule as the OpenStreetMap match - one name is the other, or its
+   start - and it has to be where the row is: within a quarter mile of a placed
+   row, within 6 miles of the town centre of one that is not. A listing that is
+   open wins over a closed one of the same name (a place that moved leaves its old
+   listing behind). */
+async function findOnGoogle(v){
+  const placed = isPlaced(v);
+  const c = placed ? ownCoords(v) : locCentroids.get(normTxt(v.location || ''));
+  if(!c) return null;
+  const d = await google('places:searchText', 'places.id,places.displayName,places.location,places.businessStatus', {
+    textQuery: v.name + ', ' + (String(v.address || '').trim() || v.location || ''),
+    pageSize: 3,
+    locationBias: { circle: { center: { latitude: c.lat, longitude: c.lng }, radius: placed ? 1500 : 15000 } }
+  });
+  const bare = k => k.replace(/^the /, ''), mine = bare(placeKey(v.name));
+  if(!mine) return null;
+  const hits = ((d && d.places) || []).filter(p => {
+    const theirs = bare(placeKey((p.displayName && p.displayName.text) || ''));
+    if(!theirs || !p.id || !p.location) return false;
+    if(!((theirs + ' ').indexOf(mine + ' ') === 0 || (mine + ' ').indexOf(theirs + ' ') === 0)) return false;
+    return haversine(c.lat, c.lng, p.location.latitude, p.location.longitude) <= (placed ? 0.25 : 6);
+  }).map(p => ({ id: p.id, status: p.businessStatus || '' }));
+  return hits.find(h => h.status === 'OPERATIONAL') || hits[0] || null;
+}
+
 
 function matches(v){
   if(state.category && (v.category||'').trim().toLowerCase() !== state.category.trim().toLowerCase()) return false;
@@ -1399,7 +1540,7 @@ function openDetail(v){
     <h2 class="${shut ? 'closed' : ''}">${escapeHtml(v.name||'')}${closedTag(v)}</h2>
     <div class="sub">${escapeHtml(v.category||'')}${v.location?' · '+escapeHtml(v.location):''}${isChain(v)?' · chain':''}</div>
     ${shut ? `<div class="closedline">${escapeHtml(closedNote(v))} — this entry is kept as a record and cannot be edited</div>` : ''}
-    ${hoursField(v)}
+    <div id="d_hours">${hoursField(v)}</div>
     ${ratingHtml}
     ${wantShown}
     ${v.notes ? `<div class="field"><label>Notes</label><div>${escapeHtml(String(v.notes))}</div></div>` : ''}
@@ -1413,6 +1554,7 @@ function openDetail(v){
     </div>`}
     <button class="closedtoggle" id="closedToggle" type="button">${shut ? 'reopen this place' : 'mark as closed'}</button>
   `;
+  showLiveHours(v);          // Google's hours, if this place has been found there
   const closedToggle = document.getElementById('closedToggle');
   if(closedToggle) closedToggle.addEventListener('click', async () => {
     const next = shut ? '' : 'x';
@@ -1602,9 +1744,15 @@ document.getElementById('saveForm').addEventListener('click', async () => {
     hasMenuDetail: editingVenue ? editingVenue.hasMenuDetail : '',
     chain: editingVenue ? (editingVenue.chain||'') : '',  // never blank an existing flag
     closed: editingVenue ? (editingVenue.closed||'') : '',
-    hours: editingVenue ? (editingVenue.hours||'') : ''
+    hours: editingVenue ? (editingVenue.hours||'') : '',
+    placeId: editingVenue ? (editingVenue.placeId||'') : '',
+    checked: editingVenue ? (editingVenue.checked||'') : ''
   };
   if(!rec.name){ alert('Enter a name.'); return; }
+  // a different name or town may be a different place on Google: ask again
+  if(editingVenue && (normTxt(rec.name) !== normTxt(editingVenue.name) || normTxt(rec.location) !== normTxt(editingVenue.location || ''))){
+    rec.placeId = ''; rec.checked = '';
+  }
   // a new or changed address makes the old point wrong: drop it, and nearest
   // looks the address up (street-level = exact) the next time it is near
   if(rec.address !== (editingVenue ? String(editingVenue.address||'').trim() : '')){
@@ -2162,6 +2310,12 @@ async function ensureHoursColumn(){
   if(hasHoursCol()) return true;
   if(!await ensureClosedColumn()) return false;
   return ensureColumn(HOURS_COL);
+}
+async function ensureGoogleColumns(){            // Place ID (15th) and Checked (16th)
+  if(mainWidth >= 16) return true;
+  if(!await ensureHoursColumn()) return false;
+  if(mainWidth < 15 && !await ensureColumn(PLACE_COL)) return false;
+  return mainWidth >= 16 ? true : ensureColumn(CHECKED_COL);
 }
 /* Mark every row of these names as a chain. Returns how many rows changed. */
 async function markChains(names){
@@ -2755,13 +2909,14 @@ function findDataIssues(){
   const noGeo = liveVenues().filter(v => !v.lat || !v.lng);
   const unplaced = liveVenues().filter(v => !isClosed(v) && !isChain(v) && !isPlaced(v));
   const withHours = liveVenues().filter(v => !isClosed(v) && String(v.hours || '').trim());
+  const onGoogle = liveVenues().filter(v => !isClosed(v) && String(v.placeId || '').trim());
   const unchained = unmarkedChainRows();
   const dupeGroups = duplicateGroups();
   const umbrellas = chainUmbrellaRows();
   const strays = strayLogRows();
   const noAddress = noAddressRows();
   const lookups = lookupRows();
-  return { dupes, falseFlags, missingFlags, noGeo, unplaced, withHours, unchained, dupeGroups, umbrellas, strays, noAddress, lookups };
+  return { dupes, falseFlags, missingFlags, noGeo, unplaced, withHours, onGoogle, unchained, dupeGroups, umbrellas, strays, noAddress, lookups };
 }
 function renderDiag(){
   const d = findDataIssues();
@@ -2787,6 +2942,9 @@ function renderDiag(){
          d.noAddress.length ? addressDetail(d) : '') +
     line(d.unplaced.length, 'Not placed', d.unplaced.length ? 'no street point — left out of the nearest ranking, listed by town instead' : '') +
     line(d.withHours.length, 'Have hours', 'of ' + liveVenues().filter(v => !isClosed(v)).length + ' open places') +
+    line(d.onGoogle.length, 'Found on Google Maps', googleKey()
+      ? 'their hours are read live when a place is opened'
+      : 'no Google key on this device') +
     line(d.unchained.length, 'Multi-location places not marked as a chain', sample(d.unchained)) +
     line(venues.filter(isClosed).length, 'Marked closed', 'kept on the list, in red, read-only');
   const btn = document.getElementById('diagFixFlags');
@@ -2809,6 +2967,13 @@ function renderDiag(){
   const st = d.strays.length;
   sbtn.textContent = st ? 'Attach ' + st + ' logged item' + (st===1?'':'s') : 'Logged items are attached';
   sbtn.disabled = !st;
+  document.getElementById('diagGoogleKey').textContent = googleKey() ? 'Google key is set' : 'Set Google key';
+  if(!googleRun){
+    const gbtn = document.getElementById('diagGoogle');
+    const due = googleKey() ? Math.min(GOOGLE_RUN, googleRows().length) : 0;
+    gbtn.textContent = !googleKey() ? 'Check with Google (needs a key)' : due ? 'Check ' + due + ' with Google' : 'Nothing to check';
+    gbtn.disabled = !due;
+  }
   const lbtn = document.getElementById('diagLookup');
   if(!lookupRun){
     const lk = d.lookups.length;
@@ -3189,6 +3354,72 @@ document.getElementById('diagHours').addEventListener('click', async () => {
     alert('Hours written for ' + hrs + ' place' + (hrs === 1 ? '' : 's') +
           (moved ? ', and ' + moved + ' placed on the map' : '') + '.');
   });
+});
+
+document.getElementById('diagGoogleKey').addEventListener('click', () => {
+  const k = prompt(googleKey()
+    ? 'A Google Maps key is set on this device. Paste a new one to replace it, or type remove to take it off.'
+    : 'Paste the Google Maps API key. It is kept on this device only.', '');
+  if(k === null || !k.trim()) return;
+  setGoogleKey(/^remove$/i.test(k.trim()) ? '' : k.trim());
+  renderDiag();
+});
+let googleRun = null;
+document.getElementById('diagGoogle').addEventListener('click', async () => {
+  if(googleRun){ googleRun.stop = true; return; }        // the button is "stop" while it runs
+  const btn = document.getElementById('diagGoogle');
+  await withBusy(async () => {
+    await loadAll();
+    const n = Math.min(GOOGLE_RUN, googleRows().length);
+    if(!n){ renderDiag(); return; }
+    if(!confirm('Ask Google Maps about ' + n + ' place' + (n === 1 ? '' : 's') + ' — whether each is still there, and its Google ID so ' +
+                'its hours can be read live? Tap the button again to stop.')) return;
+    googleRun = { stop: false };
+    let found = 0, missed = 0, marked = 0, done = 0, quota = false;
+    const gone = [], stamp = 'checked ' + todayPacific();
+    try{
+      if(!await ensureGoogleColumns()) return;
+      await openSession();
+      await loadAll();
+      for(const v of googleRows().slice(0, n)){
+        if(googleRun.stop) break;
+        btn.textContent = 'asking about ' + (++done) + ' of ' + n + ' — tap to stop';
+        let hit = null;
+        try{ hit = await findOnGoogle(v); }
+        catch(e){ if(e.quota){ quota = true; break; } throw e; }
+        const cur = await liveRow(v);
+        if(!cur || isClosed(cur)) continue;
+        const rec = Object.assign({}, cur, { checked: stamp }, hit ? { placeId: hit.id } : {});
+        delete rec.index;
+        await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
+        if(hit){ found++; if(hit.status === 'CLOSED_PERMANENTLY') gone.push(cur); }
+        else missed++;
+      }
+      // nothing is marked closed without being shown first: a wrong match would
+      // turn a live place into a read-only record
+      if(gone.length && confirm('Google Maps lists ' + gone.length + ' as permanently closed: ' +
+          gone.slice(0, 15).map(g => g.name).join('; ') + (gone.length > 15 ? ' and ' + (gone.length - 15) + ' more' : '') +
+          '. Mark ' + (gone.length === 1 ? 'it' : 'them') + ' closed? ' + (gone.length === 1 ? 'It stays' : 'They stay') +
+          ' on the list as a record and can be reopened.')){
+        for(const g of gone){
+          const cur = await liveRow(g);
+          if(!cur || isClosed(cur)) continue;
+          const rec = Object.assign({}, cur, { closed: 'closed (Google Maps, ' + monthPacific() + ')' });
+          delete rec.index;
+          await graph('PATCH', mainRow(cur.index), { values: [objToRow(rec)] });
+          marked++;
+        }
+      }
+    } finally {
+      await closeSession();
+      googleRun = null;
+    }
+    await loadAll(); populateCategories(); render(); renderDiag();
+    alert(found + ' found on Google Maps' + (missed ? ', ' + missed + ' not matched' : '') +
+          (marked ? ', ' + marked + ' marked closed' : '') + '.' +
+          (quota ? ' Google\'s allowance for today is used up; the rest can run tomorrow.' : ''));
+  });
+  renderDiag();
 });
 
 async function checkVersion(){
