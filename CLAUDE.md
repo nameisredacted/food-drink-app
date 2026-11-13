@@ -779,3 +779,25 @@ Sunday; always-open is one period opening Sunday 0:00 with no close; `BusinessSt
 and the tests stub them (`app({ google, googleKey })`). The first real run is the test.
 
 Tests: 151 checks.
+
+## Excel asleep — second time, same day (2026-11-12, evening)
+
+It came back within three hours: the last good read was 3:57 pm, and by 6:48 pm every
+`/workbook` call was 401 again. The fallback did what it was built for on the real thing —
+the page opened on the 3:57 pm copy, read-only, with the banner and the link to the workbook's
+own `webUrl` — and the first read that worked cleared it (`readOnly` off, banner gone, `+` back).
+
+Two things learned:
+
+- **The app cannot wake Excel by itself.** `POST …/preview` returns an embeddable URL
+  (200, on `my.microsoftpersonalcontent.com`); loading it in a hidden iframe and waiting a
+  minute left the API at 401. Do not spend time on that route again. Waking takes a real
+  page load of the workbook in Excel for the web, which only a tap can start.
+- **Sometimes Excel for the web is down too.** The first attempt to open the workbook got
+  Microsoft's own `503 — Something went wrong. This is a temporary issue`; the second, a minute
+  later, loaded, and the API answered 200 as it did. When the link leads to that page there is
+  nothing to do but try again shortly; the saved copy is what keeps the list usable meanwhile.
+
+At this rate the list will often open read-only. Reading is covered; adding or changing needs the
+tap. A store that is not Excel on a personal OneDrive is the only thing that removes the problem,
+and that is a decision for the user — not started.
