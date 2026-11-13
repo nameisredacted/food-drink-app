@@ -419,7 +419,7 @@ select.on{color:#111;font-weight:700;}
 
 <script>
 /* ====== CONFIG ====== */
-const APP_VERSION = "2026.11.12-5";
+const APP_VERSION = "2026.11.12-6";
 const MSAL_CLIENT_ID = "7175d0f0-c775-4157-87de-0d85914a1350";
 const REDIRECT_URI = "https://nameisredacted.github.io/food-drink-app/";
 const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
@@ -469,7 +469,11 @@ async function getToken(){
    the browser") while the file itself reads fine through the drive endpoints. The
    token and the workbook are both good. Opening any workbook once in Excel for the
    web wakes it for the whole account (seen 2026-11-12). */
-function isExcelAsleep(status, text){ return status === 401 && /FileOpenUserUnauthorized/.test(text || ''); }
+/* The same service also just times out: 502/503/504 with code UnknownError after
+   about 45 seconds (2026-11-12, late evening). Same cure, so same treatment. */
+function isExcelAsleep(status, text){
+  return (status === 401 && /FileOpenUserUnauthorized/.test(text || '')) || status === 502 || status === 503 || status === 504;
+}
 let readOnly = null;   // { at } while the list on screen is the copy saved on this device
 
 /* A workbook session, for runs that write hundreds of rows. Without one Excel opens
@@ -495,8 +499,8 @@ async function closeSession(){
 
 async function graph(method, path, body){
   if(readOnly && method !== 'GET'){
-    const e = new Error('The list is read-only right now: the workbook could not be read. ' +
-                        'Open the workbook in Excel, come back, and the list reloads.');
+    const e = new Error('The list is read-only until the live workbook has been read. ' +
+                        'If it stays that way, open the workbook in Excel and come back.');
     e.userFacing = true;
     throw e;
   }
@@ -839,9 +843,17 @@ async function setWakeLink(){   // point the link at the workbook itself; OneDri
     if(a && j && /^https:\/\//.test(j.webUrl || '')) a.href = j.webUrl;
   }catch(e){ /* the OneDrive front page still gets there */ }
 }
+function showLoadingNote(){          // the saved copy is up; the live read is still on its way
+  const b = document.getElementById('staleBanner');
+  if(!b || !readOnly) return;
+  b.className = 'count';
+  b.textContent = 'showing the list as saved ' + fmtWhen(readOnly.at) + ' while the live one loads…';
+  b.style.display = '';
+}
 function showStale(e){
   const b = document.getElementById('staleBanner');
   if(!b) return;
+  b.className = 'errbox';
   const saved = readOnly ? 'showing the list as saved ' + fmtWhen(readOnly.at) + ' — read-only. ' : '';
   if(e && e.excelAsleep){
     b.innerHTML = saved + 'Microsoft\'s Excel service has stopped answering for this account; the workbook itself is fine. ' +
@@ -875,7 +887,7 @@ function clearStale(){
    alone rather than blanking the list. */
 const REFRESH_AFTER_MS = 20000;
 async function refreshIfStale(){
-  if(!booted || refreshing || document.hidden) return;
+  if(!booted || refreshing || starting || document.hidden) return;
   if(document.querySelector('.sheet.open')) return;
   if(Date.now() - lastLoadAt < REFRESH_AFTER_MS) return;
   refreshing = true;
@@ -2819,13 +2831,19 @@ async function startApp(){
   if(starting) return;
   starting = true;
   gateAsleep = false;
-  showLoading();
+  // The saved copy goes on screen at once and the live read replaces it when it
+  // lands. Excel can take 45 seconds to say it is not answering; nobody should
+  // sit on a spinner for that when the list is already on the device.
+  const saved = !booted && useSnapshot();
+  if(saved){ enterApp(); showLoadingNote(); }
+  else showLoading();
   try{
-    await loadAll();
-    enterApp();
+    await loadAll();                    // clears read-only and the note when it works
+    if(saved){ populateCategories(); render(); }
+    else enterApp();
   }catch(e){
     console.error(e);
-    if(useSnapshot()){ enterApp(); showStale(e); }       // the list as last saved, read-only
+    if(saved) showStale(e);             // stays on the saved copy, read-only, and says why
     else if(e.excelAsleep) showAsleepGate();
     else showGateError('Could not load your file: ' + e.message);
   }finally{

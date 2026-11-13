@@ -67,9 +67,13 @@ function app({ venues = [], menu = [], stale = 0, geocode = () => null, fix = nu
         }
         if(u.includes('/me/drive/root:') && !u.includes(':/workbook'))   // the drive item, not the workbook
           return { ok: true, status: 200, async json(){ return { webUrl: 'https://onedrive.live.com/the-workbook' }; } };
+        if(state.slow) await new Promise(r => setTimeout(r, state.slow));   // Excel taking its time
         if(state.asleep){
-          const body = '{"error":{"code":"FileOpenUserUnauthorized","message":"You do not have permissions to open this file in the browser."}}';
-          return { ok: false, status: 401, async text(){ return body; }, async json(){ return JSON.parse(body); } };
+          const status = typeof state.asleep === 'number' ? state.asleep : 401;      // a number: time out with that status
+          const body = status === 401
+            ? '{"error":{"code":"FileOpenUserUnauthorized","message":"You do not have permissions to open this file in the browser."}}'
+            : '{"error":{"code":"UnknownError","message":""}}';
+          return { ok: false, status, async text(){ return body; }, async json(){ return JSON.parse(body); } };
         }
         if(u.includes('/createSession')){ state.sessions = (state.sessions || 0) + 1; return { ok: true, status: 201, async json(){ return { id: 'session-1' }; }, async text(){ return ''; } }; }
         if(u.includes('/closeSession')){ state.sessionsClosed = (state.sessionsClosed || 0) + 1; return { ok: true, status: 204, async json(){ return null; }, async text(){ return ''; } }; }
@@ -977,6 +981,44 @@ const check = (name, fn) => {
     if(a.w.eval('readOnly') !== null) throw new Error('still read-only');
     if(a.$('staleBanner').style.display !== 'none') throw new Error('banner left up');
     if(a.$('addBtn').style.display === 'none') throw new Error('add button still hidden');
+  });
+}
+
+/* ---------- Excel timing out (504), and the saved copy shown at once (2026.11.12-6) ---------- */
+{
+  const a = app({ venues: [V.zuni], asleep: 504 });
+  await a.settle(400);
+  check('504: a time-out from Excel gets the same plain words and link as the 401', () => {
+    const t = a.$('gateInner').textContent;
+    if(!/Excel service has stopped answering/.test(t) || /UnknownError|Graph GET/.test(t)) throw new Error(t);
+    if(!a.$('wakeLink')) throw new Error('no link');
+  });
+}
+{
+  const a = app({ venues: [V.zuni], asleep: 504, snapshot: { at: Date.now() - 3600e3, main: [V.zuni, V.philzSF], menu: [] } });
+  await a.settle(400);
+  check('504: with a saved copy the banner offers the link, not the raw error', () => {
+    const b = a.$('staleBanner');
+    if(!/read-only/.test(b.textContent) || !b.querySelector('#wakeLink')) throw new Error(b.textContent);
+    if(/UnknownError/.test(b.textContent)) throw new Error('raw error shown');
+  });
+}
+{
+  const a = app({ venues: [V.zuni], menu: [M.zuni], snapshot: { at: Date.now() - 3600e3, main: [V.zuni, V.philzSF], menu: [] } });
+  a.state.slow = 500;                    // the live read takes half a second
+  await a.settle(200);
+  check('start-up: the saved copy is on screen while the live read is still out', () => {
+    if(a.$('gate').style.display !== 'none') throw new Error('still on the spinner');
+    if(a.w.eval('venues.length') !== 2) throw new Error(a.w.eval('venues.length') + ' rows');
+    if(!/while the live one loads/.test(a.$('staleBanner').textContent)) throw new Error(a.$('staleBanner').textContent);
+    if(a.$('staleBanner').className !== 'count') throw new Error('shown as an error');
+    if(a.$('addBtn').style.display !== 'none') throw new Error('add offered against a saved copy');
+  });
+  await a.settle(1600);
+  check('start-up: the live list replaces it without a word', () => {
+    if(a.w.eval('venues.length') !== 1 || a.w.eval('menuRows.length') !== 1) throw new Error('not replaced');
+    if(a.w.eval('readOnly') !== null || a.$('staleBanner').style.display !== 'none') throw new Error('note left up');
+    if(a.$('addBtn').style.display === 'none') throw new Error('add still hidden');
   });
 }
 

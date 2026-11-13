@@ -801,3 +801,27 @@ Two things learned:
 At this rate the list will often open read-only. Reading is covered; adding or changing needs the
 tap. A store that is not Excel on a personal OneDrive is the only thing that removes the problem,
 and that is a decision for the user — not started.
+
+## Excel timing out, and the saved copy first (2026.11.12-6)
+
+Late on 2026-11-12 the failure changed shape: `504 {"error":{"code":"UnknownError","message":""}}`
+from `/workbook` after about 45 seconds, on the user's Safari and in the desktop app's browser
+pane alike. Opening the workbook in Excel for the web cured it exactly as it cures the 401 — the
+next read took 2.7 s. So `isExcelAsleep()` now also covers 502/503/504, and those get the plain
+sentence and the *open the workbook in Excel* link instead of the raw Graph text.
+
+**Start-up no longer waits on Excel.** If the device holds a saved copy, `startApp()` shows it at
+once (`showLoadingNote()`: a quiet grey line, *showing the list as saved … while the live one
+loads…*, read-only) and the live read replaces it when it lands; `clearStale()` inside `loadAll()`
+takes the note down and brings the `+` back. If the read fails the copy stays and the banner turns
+into the error. A device with no copy still gets the spinner. `refreshIfStale()` stands down while
+`starting` is set so a focus event cannot start a second read on top of the first.
+
+Tests: `state.slow` (ms added to every workbook call) and `asleep: 504`. 155 checks.
+
+Google set-up, same night: the Cloud quota page for Places API (New) does list
+**SearchTextRequest per day** and **GetPlaceRequest per day** (user's screenshot), but a Free Trial
+billing account cannot change a quota. No caps during the trial — it cannot be billed — and they
+are to be set (150 and 30) on the day the account is upgraded to paid, about mid-February 2027.
+Google asked for a one-time $30 prepayment before the billing account would go active (its
+docs: refunded if unused when the account is closed); whether it was paid is not recorded here.
